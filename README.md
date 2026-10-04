@@ -4,7 +4,7 @@ LuminaPlus 是为 [monitor](https://github.com/monitor-probe/monitor) 移植的�
 
 本项目基于 [Komari-Theme-LuminaPlus](https://github.com/shanyang242/Komari-Theme-LuminaPlus) 移植，并继续遵循 MIT 许可证。
 
-维护仓库与发布地址：[kure29/Monitor-Theme-LuminaPlus](https://github.com/kure29/Monitor-Theme-LuminaPlus)
+维护仓库与发布地址：[oilvlio/Monitor-Theme-LuminaPlus](https://github.com/oilvlio/Monitor-Theme-LuminaPlus)
 
 ![Monitor Theme LuminaPlus 预览](docs/images/monitor-theme-preview.png)
 
