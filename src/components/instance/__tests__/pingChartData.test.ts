@@ -17,6 +17,31 @@ function sample(time: number, value: number, extra: Partial<PingRecord> = {}) {
 }
 
 describe("alignPingChartRecords", () => {
+  it("keeps 120-second raw points at their timestamps across another task's 60-second point", () => {
+    const result = alignPingChartRecords(
+      [
+        sample(0, 20, { task_id: 1, raw: true }),
+        sample(60, 30, { task_id: 2 }),
+        sample(120, 22, { task_id: 1, raw: true }),
+      ],
+      new Set(["1", "2"]),
+      0.8,
+    );
+
+    expect(result.latencyPoints).toEqual([
+      { time: 0, "1": 20 },
+      { time: 60, "2": 30 },
+      { time: 120, "1": 22 },
+    ]);
+    const withGaps = insertMetricGapSentinels(result.latencyPoints, {
+      intervals: new Map([["1", 120], ["2", 60]]),
+      defaultInterval: 60,
+    });
+    expect(withGaps.map((point) => point.time)).toEqual([0, 60, 120]);
+    expect(withGaps.filter((point) => typeof point["1"] === "number").map((point) => point.time)).toEqual([0, 120]);
+    expect(withGaps.some((point) => point["1"] === null)).toBe(false);
+  });
+
   it("retains losses when a successful sample shares the same time anchor", () => {
     const records = [0, 0.5, 2, 2.5, 4, 4.5].map((time, index) =>
       sample(time, index % 2 === 0 ? -1 : 20),

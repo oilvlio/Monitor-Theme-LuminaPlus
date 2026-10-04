@@ -105,13 +105,25 @@ interface MonitorPingPoint {
   ts: number;
   latency: number | null;
   loss?: number;
+  count?: number;
+  lost_count?: number;
+  raw?: boolean;
+}
+
+interface MonitorPingTaskConfig {
+  id: number;
+  name: string;
+  interval_seconds: number;
+  count: number;
 }
 
 interface MonitorHistory {
   metrics?: MonitorMetricPoint[];
   ping?: MonitorPingPoint[];
   probes?: Record<string, string>;
+  probe_configs?: MonitorPingTaskConfig[];
   loss?: Record<string, number>;
+  step?: number;
 }
 
 interface PingOverviewResponse {
@@ -671,12 +683,15 @@ export async function getTodayTrafficMetrics(
 }
 
 export function normalizePingHistory(uuid: string, hours: number, payload: MonitorHistory): PingRecordsResponse {
+  const configs = new Map((payload.probe_configs ?? []).map((item) => [item.id, item] as const));
   const records: PingRecord[] = (payload.ping ?? []).map((point) => ({
     task_id: point.task_id,
     time: point.ts,
     value: point.latency == null ? -1 : point.latency,
     client: uuid,
-    count: 1,
+    count: point.count ?? 1,
+    lost_count: point.lost_count,
+    raw: point.raw ?? false,
     loss: point.loss ?? (point.latency == null ? 100 : 0),
   }));
   // monitor 只把有丢包的探测放进 loss 里,缺席即 0%;逐桶 loss 是桶内百分比,分母已经丢了,
@@ -702,8 +717,8 @@ export function normalizePingHistory(uuid: string, hours: number, payload: Monit
   const tasks = [...ids]
     .sort((left, right) => left - right)
     .map((id) => ({
-      ...taskFromProbe(id, payload.probes?.[String(id)] ?? "", [uuid]),
-      interval: interval ?? 60,
+      ...taskFromProbe(id, configs.get(id)?.name ?? payload.probes?.[String(id)] ?? "", [uuid]),
+      interval: configs.get(id)?.interval_seconds ?? interval ?? 60,
       loss: windowLoss[id] ?? 0,
     }));
   return {
@@ -713,6 +728,7 @@ export function normalizePingHistory(uuid: string, hours: number, payload: Monit
     windowLoss,
     ...range(hours),
     intervalSeconds: interval,
+    stepSeconds: payload.step,
   };
 }
 

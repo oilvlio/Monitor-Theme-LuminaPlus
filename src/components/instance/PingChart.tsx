@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import UplotReact from "uplot-react";
 import type uPlot from "uplot";
-import { Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Eye, RefreshCw } from "lucide-react";
 import { usePingRecords } from "@/hooks/useRecords";
 import { InstancePanel, InstanceChartLoading } from "./InstancePanel";
 import {
@@ -98,6 +98,17 @@ export function summarizePingRecords(records: PingRecord[]) {
   };
 }
 
+export function togglePingTaskSelection(selected: ReadonlySet<number>, taskId: number) {
+  const next = new Set(selected);
+  if (next.has(taskId)) next.delete(taskId);
+  else next.add(taskId);
+  return next;
+}
+
+export function isPingTaskVisible(selected: ReadonlySet<number>, taskId: number) {
+  return selected.size === 0 || selected.has(taskId);
+}
+
 const EMPTY_PING_STATS: PingTaskStats[] = [];
 const MAX_RENDER_POINTS = 160;
 // 1 即关闭平滑(smoothByCount 对 <=1 原样返回);保留常量便于调参,非削峰模式当前不平滑。
@@ -134,7 +145,7 @@ export function PingChart({
   );
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
-  const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
   const [chartMetric, setChartMetric] = useState<"latency" | "loss">("latency");
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
@@ -174,8 +185,8 @@ export function PingChart({
     [tasks],
   );
   const visibleTasks = useMemo(
-    () => tasks.filter((task) => !hiddenTasks.has(task.id)),
-    [hiddenTasks, tasks],
+    () => tasks.filter((task) => isPingTaskVisible(selectedTaskIds, task.id)),
+    [selectedTaskIds, tasks],
   );
   const visibleTaskIds = useMemo(
     () => new Set(visibleTasks.map((task) => task.id)),
@@ -183,11 +194,11 @@ export function PingChart({
   );
 
   useEffect(() => {
-    setHiddenTasks(new Set());
+    setSelectedTaskIds(new Set());
   }, [uuid]);
 
   useEffect(() => {
-    setHiddenTasks((prev) => {
+    setSelectedTaskIds((prev) => {
       const validTaskIds = new Set(tasks.map((task) => task.id));
       const next = new Set([...prev].filter((taskId) => validTaskIds.has(taskId)));
       return next.size === prev.size ? prev : next;
@@ -216,8 +227,9 @@ export function PingChart({
       sortedRecords.map(({ time }) => time),
       60,
     );
+    const aggregateInterval = data.stepSeconds ?? data.intervalSeconds;
     const fallbackInterval = resolvePingChartInterval(
-      data.intervalSeconds,
+      aggregateInterval,
       taskIntervals.length > 0 ? Math.min(...taskIntervals) : null,
       detectedInterval,
     );
@@ -225,10 +237,18 @@ export function PingChart({
 
     const gapOptions = {
       intervals: new Map(
-        tasks.map((task) => [
-          String(task.id),
-          resolvePingChartInterval(data.intervalSeconds, task.interval, fallbackInterval),
-        ] as const),
+        tasks.map((task) => {
+          const taskRecords = sortedRecords.filter(({ record }) => record.task_id === task.id);
+          const hasRawPoints = taskRecords.some(({ record }) => record.raw === true);
+          const detectedTaskInterval = detectTypicalIntervalSeconds(
+            taskRecords.map(({ time }) => time),
+            task.interval,
+          );
+          const interval = hasRawPoints
+            ? resolvePingChartInterval(undefined, task.interval, detectedTaskInterval)
+            : resolvePingChartInterval(aggregateInterval, task.interval, detectedTaskInterval);
+          return [String(task.id), interval] as const;
+        }),
       ),
       defaultInterval: fallbackInterval,
       matchToleranceRatio: 0.25,
@@ -417,7 +437,7 @@ export function PingChart({
           stroke: taskColors.get(task.id) ?? colorForSeries(index, tasks.length),
           width: 1.7,
           spanGaps: connectNulls,
-          show: !hiddenTasks.has(task.id),
+          show: isPingTaskVisible(selectedTaskIds, task.id),
           points: { show: false },
         })),
       ],
@@ -436,7 +456,7 @@ export function PingChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     };
-  }, [chart, chartMetric, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [chart, chartMetric, connectNulls, selectedTaskIds, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
@@ -508,16 +528,11 @@ export function PingChart({
   };
 
   const toggleTask = (taskId: number) => {
-    setHiddenTasks((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) next.delete(taskId);
-      else next.add(taskId);
-      return next;
-    });
+    setSelectedTaskIds((prev) => togglePingTaskSelection(prev, taskId));
   };
 
-  const toggleAll = () => {
-    setHiddenTasks((prev) => (prev.size === 0 ? new Set(tasks.map((task) => task.id)) : new Set()));
+  const showAllTasks = () => {
+    setSelectedTaskIds(new Set());
   };
 
   if (isLoading) {
@@ -586,10 +601,12 @@ export function PingChart({
           onToggle={() => setConnectNulls((value) => !value)}
           title="关闭：如实显示中断/丢包断点；开启：跨过所有空缺连成完整曲线（更好看，但看不出掉线）。注：偶尔漏一两次采样的小空缺始终自动桥接，不受此开关影响。"
         />
-        <button type="button" className="instance-toggle-button" onClick={toggleAll}>
-          {hiddenTasks.size === 0 ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
-          {hiddenTasks.size === 0 ? "隐藏全部" : "显示全部"}
-        </button>
+        {selectedTaskIds.size > 0 && (
+          <button type="button" className="instance-toggle-button" onClick={showAllTasks}>
+            <Eye size={14} aria-hidden />
+            显示全部
+          </button>
+        )}
         <button
           type="button"
           className="instance-toggle-button"
@@ -602,18 +619,18 @@ export function PingChart({
         </button>
       </div>
 
-      <div className="instance-ping-tasks">
+      <div className="instance-ping-tasks" data-filtered={selectedTaskIds.size > 0 ? "true" : "false"}>
         {taskStats.map((task) => {
-          const visible = !hiddenTasks.has(task.id);
+          const selected = selectedTaskIds.has(task.id);
           return (
             <button
               key={task.id}
               type="button"
               className="instance-ping-task"
-              data-visible={visible ? "true" : "false"}
-              aria-pressed={visible}
+              data-selected={selected ? "true" : "false"}
+              aria-pressed={selected}
               onClick={() => toggleTask(task.id)}
-              style={{ borderColor: visible ? task.color : "var(--border-subtle)" }}
+              style={{ borderColor: selected ? task.color : "var(--border-subtle)" }}
               title={[
                 taskLabels.get(task.id) ?? `任务 #${task.id}`,
                 `当前 ${task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"} | 均值 ${task.avg != null ? `${task.avg.toFixed(1)} ms` : "—"} | 丢包 ${task.loss.toFixed(1)}%`,
@@ -621,25 +638,27 @@ export function PingChart({
                 `min ${task.min != null ? `${task.min.toFixed(0)} ms` : "—"} | max ${task.max != null ? `${task.max.toFixed(0)} ms` : "—"} | 样本 ${task.total ?? 0} | 间隔 ${task.interval}s`,
               ].join("\n")}
             >
-              <span className="instance-ping-task-dot" style={{ background: task.color }} aria-hidden />
-              <span className="instance-ping-task-name">{taskLabels.get(task.id) ?? `任务 #${task.id}`}</span>
-              <span
-                className="instance-ping-task-primary"
-                style={{
-                  color:
-                    task.latest != null
-                      ? latencyHeatColor(task.latest)
-                      : "var(--text-tertiary)",
-                }}
-              >
-                {task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"}
-              </span>
-              <span
-                className="instance-ping-task-loss"
-                style={{ color: lossHeatColor(task.loss) }}
-              >
-                {task.loss.toFixed(1)}%
-              </span>
+              <div className="instance-ping-task-head">
+                <span className="instance-ping-task-name">{taskLabels.get(task.id) ?? `任务 #${task.id}`}</span>
+                <span
+                  className="instance-ping-task-primary"
+                  style={{ color: task.latest != null ? latencyHeatColor(task.latest) : "var(--text-tertiary)" }}
+                >
+                  {task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"}
+                </span>
+              </div>
+              <div className="instance-ping-task-stats">
+                <span>均值 {task.avg != null ? `${task.avg.toFixed(1)} ms` : "—"}</span>
+                <span style={{ color: lossHeatColor(task.loss) }}>丢包 {task.loss.toFixed(1)}%</span>
+                <span>p99 {task.p99 != null ? `${task.p99.toFixed(0)} ms` : "—"}</span>
+                <span>抖动 {task.volatility != null ? task.volatility.toFixed(2) : "—"}</span>
+              </div>
+              <div className="instance-ping-task-meta">
+                <span>min {task.min != null ? `${task.min.toFixed(0)} ms` : "—"}</span>
+                <span>max {task.max != null ? `${task.max.toFixed(0)} ms` : "—"}</span>
+                <span>样本 {task.total ?? 0}</span>
+                <span>{task.interval}s</span>
+              </div>
             </button>
           );
         })}
@@ -656,7 +675,7 @@ export function PingChart({
             <ChartTooltip tooltip={tooltip} />
           </>
         ) : (
-          <div className="instance-empty">当前已隐藏全部线路，点击上方按钮可恢复显示</div>
+          <div className="instance-empty">当前没有可显示的线路</div>
         )}
       </div>
     </InstancePanel>
