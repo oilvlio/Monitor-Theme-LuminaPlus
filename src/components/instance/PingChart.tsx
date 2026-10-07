@@ -236,18 +236,18 @@ export function PingChart({
     const tolerance = Math.min(6, Math.max(0.8, fallbackInterval * 0.25));
 
     const gapOptions = {
+      // 逐任务检测优先：task.interval 已是逐任务值（见 normalizePingHistory），
+      // 这里用实际画出的点再确认一次，点不足时回退到它。
       intervals: new Map(
         tasks.map((task) => {
           const taskRecords = sortedRecords.filter(({ record }) => record.task_id === task.id);
-          const hasRawPoints = taskRecords.some(({ record }) => record.raw === true);
-          const detectedTaskInterval = detectTypicalIntervalSeconds(
-            taskRecords.map(({ time }) => time),
-            task.interval,
-          );
-          const interval = hasRawPoints
-            ? resolvePingChartInterval(undefined, task.interval, detectedTaskInterval)
-            : resolvePingChartInterval(aggregateInterval, task.interval, detectedTaskInterval);
-          return [String(task.id), interval] as const;
+          return [
+            String(task.id),
+            detectTypicalIntervalSeconds(
+              taskRecords.map(({ time }) => time),
+              task.interval,
+            ),
+          ] as const;
         }),
       ),
       defaultInterval: fallbackInterval,

@@ -23,25 +23,25 @@ describe("monitor Ping history adapter", () => {
     expect(result.intervalSeconds).toBe(60);
   });
 
-  it("uses per-probe interval and preserves raw round counts in mixed-resolution history", () => {
+  it("orders tasks by first appearance and detects per-task intervals without probe configs", () => {
     const result = normalizePingHistory("9", 4, {
       step: 60,
       probes: { "2": "Slow probe", "3": "Fast probe" },
-      probe_configs: [
-        { id: 2, name: "Slow probe", interval_seconds: 120, count: 3 },
-        { id: 3, name: "Fast probe", interval_seconds: 60, count: 1 },
-      ],
       ping: [
-        { task_id: 2, ts: 1_700_000_000, latency: 24, count: 3, lost_count: 1, loss: 100 / 3, raw: true },
-        { task_id: 3, ts: 1_700_000_060, latency: 32, count: 1, loss: 0, raw: false },
-        { task_id: 2, ts: 1_700_000_120, latency: 25, count: 3, lost_count: 0, loss: 0, raw: true },
+        { task_id: 3, ts: 1_700_000_060, latency: 32, loss: 0 },
+        { task_id: 2, ts: 1_700_000_000, latency: 24 },
+        { task_id: 2, ts: 1_700_000_120, latency: 25 },
+        { task_id: 3, ts: 1_700_000_120, latency: 33, loss: 0 },
+        { task_id: 3, ts: 1_700_000_180, latency: 31, loss: 0 },
       ],
     });
 
-    expect(result.tasks.map((task) => [task.id, task.interval])).toEqual([[2, 120], [3, 60]]);
+    // ping 按后台面板顺序返回：先出现的任务排前面，与 id 大小无关
+    expect(result.tasks.map((task) => task.id)).toEqual([3, 2]);
+    // 快任务不能把慢任务的周期带偏，否则慢任务会被误判成断点
+    expect(result.tasks.map((task) => [task.id, task.interval])).toEqual([[3, 60], [2, 120]]);
     expect(result.stepSeconds).toBe(60);
-    expect(result.records[0]).toMatchObject({ count: 3, lost_count: 1, raw: true });
-    expect(result.records[1]).toMatchObject({ task_id: 3, count: 1, raw: false });
+    expect(result.records[0]).toMatchObject({ task_id: 3, count: 1 });
   });
 
   it("surfaces the window loss instead of leaving it to per-bucket averages (regression)", () => {
