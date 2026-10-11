@@ -259,7 +259,9 @@ export const PingRecordSchema = z
     value: z.number(),
     client: z.string().default(""),
     count: z.number().optional(),
+    lost_count: z.number().optional(),
     loss: z.number().nullable().optional(),
+    raw: z.boolean().optional(),
   })
   .passthrough();
 
@@ -299,6 +301,8 @@ export interface PingRecordsResponse {
   windowLoss?: Record<number, number>;
   /** 新 metric API 实际采用的聚合间隔，用于图表正确识别长区间连续点。 */
   intervalSeconds?: number;
+  /** Monitor history response's aggregate bucket width; not the probe interval. */
+  stepSeconds?: number;
   rangeStartMs?: number;
   rangeEndMs?: number;
   /** 新 metric API 返回的服务端区间统计；旧后端回退时不存在。 */

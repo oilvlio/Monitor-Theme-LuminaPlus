@@ -112,6 +112,7 @@ interface MonitorHistory {
   ping?: MonitorPingPoint[];
   probes?: Record<string, string>;
   loss?: Record<string, number>;
+  step?: number;
 }
 
 interface PingOverviewResponse {
@@ -694,18 +695,39 @@ export function normalizePingHistory(uuid: string, hours: number, payload: Monit
   }
   // probes 是当前后台分配的任务；历史记录可能仍含已撤销分配的旧任务。
   // 旧版 monitor 没有 probes 时才退回到记录中的任务 ID。
-  const ids = new Set(
+  const assigned = new Set(
     (payload.probes != null ? Object.keys(payload.probes).map(Number) : records.map((record) => record.task_id))
       .filter((id) => Number.isSafeInteger(id) && id > 0),
   );
+  // 后台顺序：ping 按面板上的监控顺序返回，取各任务首次出现的顺序；
+  // 本窗口无点的已分配任务跟在后面（probes 的整数 key 无顺序，只做成员判断）。
+  const orderedIds: number[] = [];
+  const seenIds = new Set<number>();
+  for (const record of records) {
+    if (assigned.has(record.task_id) && !seenIds.has(record.task_id)) {
+      seenIds.add(record.task_id);
+      orderedIds.push(record.task_id);
+    }
+  }
+  for (const id of assigned) {
+    if (!seenIds.has(id)) orderedIds.push(id);
+  }
+  // 逐任务检测周期：多任务混在一起时全局推断会被快任务带偏，
+  // 慢任务会被误判成断点（空-有-空-有）。点不足时回退全局推断，再回退 60。
+  const timesByTask = new Map<number, number[]>();
+  for (const point of payload.ping ?? []) {
+    const list = timesByTask.get(point.task_id);
+    if (list) list.push(point.ts);
+    else timesByTask.set(point.task_id, [point.ts]);
+  }
   const interval = inferIntervalSeconds((payload.ping ?? []).map((point) => point.ts));
-  const tasks = [...ids]
-    .sort((left, right) => left - right)
-    .map((id) => ({
-      ...taskFromProbe(id, payload.probes?.[String(id)] ?? "", [uuid]),
-      interval: interval ?? 60,
-      loss: windowLoss[id] ?? 0,
-    }));
+  const taskInterval = (id: number) =>
+    inferIntervalSeconds(timesByTask.get(id) ?? []) ?? interval ?? 60;
+  const tasks = orderedIds.map((id) => ({
+    ...taskFromProbe(id, payload.probes?.[String(id)] ?? "", [uuid]),
+    interval: taskInterval(id),
+    loss: windowLoss[id] ?? 0,
+  }));
   return {
     count: records.length,
     records,
@@ -713,6 +735,7 @@ export function normalizePingHistory(uuid: string, hours: number, payload: Monit
     windowLoss,
     ...range(hours),
     intervalSeconds: interval,
+    stepSeconds: payload.step,
   };
 }
 

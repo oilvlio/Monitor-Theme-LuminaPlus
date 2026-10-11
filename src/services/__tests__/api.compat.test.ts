@@ -23,6 +23,27 @@ describe("monitor Ping history adapter", () => {
     expect(result.intervalSeconds).toBe(60);
   });
 
+  it("orders tasks by first appearance and detects per-task intervals without probe configs", () => {
+    const result = normalizePingHistory("9", 4, {
+      step: 60,
+      probes: { "2": "Slow probe", "3": "Fast probe" },
+      ping: [
+        { task_id: 3, ts: 1_700_000_060, latency: 32, loss: 0 },
+        { task_id: 2, ts: 1_700_000_000, latency: 24 },
+        { task_id: 2, ts: 1_700_000_120, latency: 25 },
+        { task_id: 3, ts: 1_700_000_120, latency: 33, loss: 0 },
+        { task_id: 3, ts: 1_700_000_180, latency: 31, loss: 0 },
+      ],
+    });
+
+    // ping 按后台面板顺序返回：先出现的任务排前面，与 id 大小无关
+    expect(result.tasks.map((task) => task.id)).toEqual([3, 2]);
+    // 快任务不能把慢任务的周期带偏，否则慢任务会被误判成断点
+    expect(result.tasks.map((task) => [task.id, task.interval])).toEqual([[3, 60], [2, 120]]);
+    expect(result.stepSeconds).toBe(60);
+    expect(result.records[0]).toMatchObject({ task_id: 3, count: 1 });
+  });
+
   it("surfaces the window loss instead of leaving it to per-bucket averages (regression)", () => {
     // monitor 的逐桶 loss 是桶内百分比(分母已经丢了),窗口丢包率只在顶层 loss 里;
     // 主题以前自己平均逐桶值,于是「180 次里丢 1 次」被算成 0%。
