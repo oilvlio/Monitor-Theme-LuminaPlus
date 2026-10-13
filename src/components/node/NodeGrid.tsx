@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleDollarSign } from "lucide-react";
@@ -53,6 +53,12 @@ import { NodeListView } from "./NodeListView";
 import { RenewalReminder } from "./RenewalReminder";
 import { canViewCosts, type NodeViewMode } from "@/utils/themeSettings";
 import type { RenewalReminderSource } from "@/utils/renewalReminder";
+
+const HomeTaskPingPanel = lazy(() =>
+  import("@/components/home/HomeTaskPingPanel").then((module) => ({
+    default: module.HomeTaskPingPanel,
+  })),
+);
 
 // 卡片视图网格密度；列表档由独立组件布局。
 const GRID_LAYOUT: Record<NodeViewMode, { className: string; minColumnWidth: number }> = {
@@ -753,6 +759,9 @@ export function NodeGrid() {
           onSelectRegion={setSelectedRegion}
         />
       )}
+      <Suspense fallback={null}>
+        <HomeTaskPingPanel nodeUuids={orderedUuids} />
+      </Suspense>
       {isList ? (
         <NodeListView uuids={orderedUuids} showCosts={costsVisible} />
       ) : showTrafficPopover ? (

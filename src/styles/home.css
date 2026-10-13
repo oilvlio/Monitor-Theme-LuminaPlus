@@ -1072,3 +1072,118 @@
   min-width: 22px;
   height: 22px;
 }
+
+/* 首页按监控任务聚合的多节点延迟对比：默认折叠，点开后才请求历史数据。 */
+.home-task-ping {
+  margin-top: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 46%, transparent);
+  border-radius: 16px;
+  background: var(--surface-a);
+  box-shadow:
+    0 14px 30px -26px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+  overflow: clip;
+}
+
+.home-task-ping-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.home-task-ping-head:hover .home-task-ping-title {
+  color: var(--text-primary);
+}
+
+.home-task-ping-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.home-task-ping-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.home-task-ping-chevron {
+  margin-inline-start: auto;
+  align-self: center;
+  color: var(--text-tertiary);
+  transition: transform 160ms ease;
+}
+
+.home-task-ping-chevron[data-expanded="true"] {
+  transform: rotate(180deg);
+}
+
+.home-task-ping-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.home-task-ping-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.home-task-ping-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.home-task-ping-field select {
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 64px));
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 54%, transparent);
+  border-radius: 10px;
+  background: var(--surface-elev-a);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.home-task-ping-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.home-task-ping-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.home-task-ping-coverage {
+  margin-inline-start: auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.home-task-ping-chart-block {
+  display: grid;
+  gap: 12px;
+}
+
+.home-task-ping-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 120px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}

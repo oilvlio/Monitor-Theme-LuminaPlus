@@ -110,7 +110,8 @@ export function isPingTaskVisible(selected: ReadonlySet<number>, taskId: number)
 }
 
 const EMPTY_PING_STATS: PingTaskStats[] = [];
-const MAX_RENDER_POINTS = 160;
+// 与后端 points=720 / Zeno maxLatencyChartPoints 对齐：60s 的 240 点不再被二次压到 160。
+const MAX_RENDER_POINTS = 720;
 // 1 即关闭平滑(smoothByCount 对 <=1 原样返回);保留常量便于调参,非削峰模式当前不平滑。
 const SMOOTH_WINDOW_POINTS = 1;
 const SMOOTH_WINDOW_POINTS_PEAK = 13;
