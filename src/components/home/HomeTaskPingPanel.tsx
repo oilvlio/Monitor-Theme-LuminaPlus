@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown } from "lucide-react";
+import { Activity, ChevronDown, RefreshCw } from "lucide-react";
 import { getPingOverview } from "@/services/api";
 import { useAllNodeMeta } from "@/hooks/useNode";
 import { Spinner } from "@/components/ui/Spinner";
@@ -113,7 +113,7 @@ export function HomeTaskPingPanel({ nodeUuids }: { nodeUuids: string[] }) {
   const failedCount = overviewQuery.data?.failedEntityIds?.length ?? 0;
 
   return (
-    <section className="home-task-ping" aria-label="监控任务延迟对比">
+    <section className="home-task-ping" aria-label="监控任务延迟对比" data-expanded={expanded ? "true" : "false"}>
       <button
         type="button"
         className="home-task-ping-head"
@@ -121,24 +121,61 @@ export function HomeTaskPingPanel({ nodeUuids }: { nodeUuids: string[] }) {
         aria-controls="home-task-ping-body"
         onClick={() => setExpanded((value) => !value)}
       >
-        <span className="home-task-ping-title">监控任务延迟对比</span>
-        <span className="home-task-ping-sub">
-          按监控任务聚合多节点 · {formatRangeLabel(hours)} · {expanded ? "收起" : "展开"}
+        <span className="home-task-ping-icon" aria-hidden>
+          <Activity size={16} />
         </span>
-        <ChevronDown
-          size={16}
-          aria-hidden
-          className="home-task-ping-chevron"
-          data-expanded={expanded ? "true" : "false"}
-        />
+        <span className="home-task-ping-heading">
+          <span className="home-task-ping-title">监控任务延迟对比</span>
+          <span className="home-task-ping-sub">选一个任务，同时对比各节点的延迟曲线</span>
+        </span>
+        <span className="home-task-ping-badge">{nodeUuids.length} 台节点</span>
+        <span className="home-task-ping-toggle">
+          {expanded ? "收起" : "展开"}
+          <ChevronDown
+            size={16}
+            aria-hidden
+            className="home-task-ping-chevron"
+            data-expanded={expanded ? "true" : "false"}
+          />
+        </span>
       </button>
 
       {expanded && (
         <div id="home-task-ping-body" className="home-task-ping-body">
           {nodeUuids.length === 0 ? (
-            <div className="home-task-ping-empty">暂无可见节点</div>
+            <div className="home-task-ping-empty">
+              <span>当前没有可见节点</span>
+              <span className="home-task-ping-empty-hint">调整上方筛选后，这里会显示对应节点的延迟对比。</span>
+            </div>
           ) : (
             <>
+              <div className="home-task-ping-tasks" role="group" aria-label="选择监控任务">
+                {overviewQuery.isLoading ? (
+                  <>
+                    <span className="home-task-ping-skeleton is-chip" aria-hidden />
+                    <span className="home-task-ping-skeleton is-chip" aria-hidden />
+                    <span className="home-task-ping-skeleton is-chip" aria-hidden />
+                  </>
+                ) : tasks.length === 0 ? (
+                  <span className="home-task-ping-hint">所选节点还没有分配监控任务</span>
+                ) : (
+                  tasks.map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      className="home-task-ping-task"
+                      data-active={task.id === selectedTaskId ? "true" : "false"}
+                      aria-pressed={task.id === selectedTaskId}
+                      onClick={() => setSelectedTaskId(task.id)}
+                      title={task.target || undefined}
+                    >
+                      <span className="home-task-ping-task-name">{task.name || `任务 #${task.id}`}</span>
+                      <span className="home-task-ping-task-type">{task.type}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+
               <div className="home-task-ping-controls">
                 <div
                   className="instance-segmented is-scrollable"
@@ -157,47 +194,37 @@ export function HomeTaskPingPanel({ nodeUuids }: { nodeUuids: string[] }) {
                     </button>
                   ))}
                 </div>
-                <label className="home-task-ping-field">
-                  <span>监控任务</span>
-                  <select
-                    value={selectedTaskId ?? ""}
-                    disabled={overviewQuery.isLoading || tasks.length === 0}
-                    onChange={(event) => setSelectedTaskId(Number(event.target.value))}
-                    aria-label="选择监控任务"
-                  >
-                    {tasks.length === 0 && <option value="">加载中…</option>}
-                    {tasks.map((task) => (
-                      <option key={task.id} value={task.id}>
-                        {task.name || `任务 #${task.id}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="home-task-ping-actions">
-                  <button
-                    type="button"
-                    className="instance-toggle-button"
-                    onClick={handleRefresh}
-                    disabled={overviewQuery.isFetching}
-                    aria-busy={overviewQuery.isFetching}
-                  >
-                    {overviewQuery.isFetching ? "刷新中" : "刷新"}
-                  </button>
-                </div>
+                <p className="home-task-ping-hint" aria-live="polite">
+                  {failedCount > 0 ? (
+                    <span className="home-task-ping-warn">{failedCount} 台节点加载失败，图中未包含</span>
+                  ) : (
+                    `对比下方卡片区的 ${nodeUuids.length} 台节点`
+                  )}
+                </p>
+                <button
+                  type="button"
+                  className="home-task-ping-refresh"
+                  onClick={handleRefresh}
+                  disabled={overviewQuery.isFetching}
+                  aria-busy={overviewQuery.isFetching}
+                  data-busy={overviewQuery.isFetching ? "true" : "false"}
+                >
+                  <RefreshCw size={14} aria-hidden />
+                  {overviewQuery.isFetching ? "刷新中" : "刷新"}
+                </button>
               </div>
-              <p className="home-task-ping-hint" aria-live="polite">
-                对比下方卡片区共 {nodeUuids.length} 台节点
-                {failedCount > 0 ? ` · 其中 ${failedCount} 台加载失败` : ""}
-              </p>
 
               {overviewQuery.isLoading ? (
-                <div className="home-task-ping-empty" aria-busy>
-                  <Spinner size={22} label="" />
-                  <span>延迟历史加载中…</span>
+                <div className="home-task-ping-loading" aria-busy>
+                  <div className="home-task-ping-skeleton is-node" aria-hidden />
+                  <div className="home-task-ping-skeleton is-node" aria-hidden />
+                  <div className="home-task-ping-skeleton is-plot" aria-hidden />
+                  <span className="home-task-ping-sr">延迟历史加载中…</span>
                 </div>
               ) : overviewQuery.isError ? (
-                <div className="home-task-ping-empty">
+                <div className="home-task-ping-empty" role="alert">
                   <span>延迟历史加载失败</span>
+                  <span className="home-task-ping-empty-hint">检查网络后重试。</span>
                   <button
                     type="button"
                     className="instance-toggle-button"
@@ -208,11 +235,10 @@ export function HomeTaskPingPanel({ nodeUuids }: { nodeUuids: string[] }) {
                     {overviewQuery.isFetching ? "重试中" : "重试"}
                   </button>
                 </div>
-              ) : activeTask == null ? (
-                <div className="home-task-ping-empty">所选节点暂无监控任务</div>
-              ) : taskRecords.length === 0 ? (
+              ) : activeTask == null ? null : taskRecords.length === 0 ? (
                 <div className="home-task-ping-empty">
-                  该任务在{formatRangeLabel(hours)}内暂无数据
+                  <span>{formatRangeLabel(hours)}内没有该任务的数据</span>
+                  <span className="home-task-ping-empty-hint">换一个更长的时间范围，或选择其他任务。</span>
                 </div>
               ) : (
                 <Suspense
@@ -234,7 +260,6 @@ export function HomeTaskPingPanel({ nodeUuids }: { nodeUuids: string[] }) {
                     rangeStartMs={overviewQuery.data?.rangeStartMs}
                     rangeEndMs={overviewQuery.data?.rangeEndMs}
                     isFetching={overviewQuery.isFetching}
-                    onRefresh={handleRefresh}
                   />
                 </Suspense>
               )}

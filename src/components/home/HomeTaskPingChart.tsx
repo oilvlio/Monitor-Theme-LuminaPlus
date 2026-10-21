@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import UplotReact from "uplot-react";
 import type uPlot from "uplot";
-import { RefreshCw } from "lucide-react";
 import {
   buildChartTooltipHooks,
   colorForSeries,
@@ -31,8 +30,21 @@ export interface TaskPingNode {
 const MAX_RENDER_POINTS = 720;
 
 // 服务端只下发有丢包的任务窗口丢包率，缺席即 0%，与 normalizePingHistory 一致。
+function windowLossValue(loss: number | undefined) {
+  return typeof loss === "number" && Number.isFinite(loss) ? loss : 0;
+}
+
 function formatWindowLoss(loss: number | undefined) {
-  return `${(typeof loss === "number" && Number.isFinite(loss) ? loss : 0).toFixed(1)}%`;
+  return `${windowLossValue(loss).toFixed(1)}%`;
+}
+
+// 丢包分档只用于着色：0 无色，<1% 轻微，<5% 注意，其余告警。
+function lossLevel(loss: number | undefined) {
+  const value = windowLossValue(loss);
+  if (value <= 0) return "none";
+  if (value < 1) return "low";
+  if (value < 5) return "mid";
+  return "high";
 }
 
 export function HomeTaskPingChart({
@@ -46,7 +58,6 @@ export function HomeTaskPingChart({
   rangeStartMs,
   rangeEndMs,
   isFetching,
-  onRefresh,
 }: {
   taskId: number;
   taskName: string;
@@ -58,7 +69,6 @@ export function HomeTaskPingChart({
   rangeStartMs?: number;
   rangeEndMs?: number;
   isFetching: boolean;
-  onRefresh: () => void;
 }) {
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
@@ -310,75 +320,79 @@ export function HomeTaskPingChart({
   };
 
   return (
-    <div className="home-task-ping-chart-block">
-      <div className="instance-ping-toolbar">
-        <SwitchToggle
-          label="断点连线"
-          active={connectNulls}
-          onToggle={() => setConnectNulls((value) => !value)}
-          title="关闭：如实显示中断/丢包断点；开启：跨过空缺连成完整曲线。"
-        />
-        <span className="home-task-ping-coverage" aria-live="polite">
-          {coverageLabel ?? ""}
-        </span>
-        <button
-          type="button"
-          className="instance-toggle-button"
-          onClick={onRefresh}
-          disabled={isFetching}
-          aria-busy={isFetching}
-        >
-          <RefreshCw size={14} aria-hidden />
-          {isFetching ? "刷新中" : "刷新"}
-        </button>
-      </div>
-
-      <div className="instance-ping-tasks" data-filtered={hiddenNodes.size > 0 ? "true" : "false"}>
+    <div className="home-task-ping-chart-block" aria-busy={isFetching}>
+      <div className="home-task-ping-nodes" data-filtered={hiddenNodes.size > 0 ? "true" : "false"}>
         {nodes.map((node, index) => {
           const selected = !hiddenNodes.has(node.uuid);
           const latest = latestByNode.get(node.uuid);
           const loss = lossByNode[node.uuid];
           const color = nodeColors.get(node.uuid) ?? colorForSeries(index, nodes.length);
+          const name = nameByUuid.get(node.uuid) ?? node.uuid;
           return (
             <button
               key={node.uuid}
               type="button"
-              className="instance-ping-task"
+              className="home-task-node"
               data-selected={selected ? "true" : "false"}
+              data-loss={lossLevel(loss)}
               aria-pressed={selected}
               onClick={() => toggleNode(node.uuid)}
-              style={{ borderColor: selected ? color : "var(--border-subtle)" }}
-              title={`${nameByUuid.get(node.uuid) ?? node.uuid}\n当前 ${latest != null ? `${latest.toFixed(1)} ms` : "—"} | 窗口丢包 ${formatWindowLoss(loss)}`}
+              style={{ "--node-color": color } as CSSProperties}
+              title={`${name}\n当前 ${latest != null ? `${latest.toFixed(1)} ms` : "超时"} | 窗口丢包 ${formatWindowLoss(loss)}\n点击${selected ? "隐藏" : "显示"}曲线`}
             >
-              <div className="instance-ping-task-head">
-                <span className="instance-ping-task-name" style={{ color }}>
-                  {nameByUuid.get(node.uuid) ?? node.uuid}
+              <span className="home-task-node-name">{name}</span>
+              <span className="home-task-node-latency" data-timeout={latest == null ? "true" : "false"}>
+                {latest != null ? (
+                  <>
+                    {latest.toFixed(1)}
+                    <small>ms</small>
+                  </>
+                ) : (
+                  "超时"
+                )}
+              </span>
+              <span className="home-task-node-loss">
+                <span className="home-task-node-loss-bar" aria-hidden>
+                  <i style={{ width: `${Math.min(100, Math.max(windowLossValue(loss) > 0 ? 4 : 0, windowLossValue(loss)))}%` }} />
                 </span>
-                <span className="instance-ping-task-primary">
-                  {latest != null ? `${latest.toFixed(1)} ms` : "—"}
-                </span>
-              </div>
-              <div className="instance-ping-task-stats">
-                <span>窗口丢包 {formatWindowLoss(loss)}</span>
-              </div>
+                <span>丢包 {formatWindowLoss(loss)}</span>
+              </span>
             </button>
           );
         })}
       </div>
 
-      <div ref={chartSizeRef} className="instance-uplot-wrap is-large">
-        {chart && options && visibleNodes.length > 0 ? (
-          <>
-            <UplotReact
-              key={`${taskId}-${hours}-${connectNulls ? "span" : "gap"}`}
-              options={options}
-              data={chart}
-            />
-            <ChartTooltip tooltip={tooltip} />
-          </>
-        ) : (
-          <div className="instance-empty">当前没有可显示的节点</div>
-        )}
+      <div className="home-task-ping-plot">
+        <div className="home-task-ping-plot-bar">
+          <SwitchToggle
+            label="断点连线"
+            active={connectNulls}
+            onToggle={() => setConnectNulls((value) => !value)}
+            title="关闭：如实显示中断/丢包断点；开启：跨过空缺连成完整曲线。"
+          />
+          {hiddenNodes.size > 0 && (
+            <button type="button" className="instance-toggle-button" onClick={() => setHiddenNodes(new Set())}>
+              显示全部节点
+            </button>
+          )}
+          <span className="home-task-ping-coverage" aria-live="polite">
+            {coverageLabel ?? ""}
+          </span>
+        </div>
+        <div ref={chartSizeRef} className="instance-uplot-wrap is-large">
+          {chart && options && visibleNodes.length > 0 ? (
+            <>
+              <UplotReact
+                key={`${taskId}-${hours}-${connectNulls ? "span" : "gap"}`}
+                options={options}
+                data={chart}
+              />
+              <ChartTooltip tooltip={tooltip} />
+            </>
+          ) : (
+            <div className="instance-empty">所有节点都已隐藏，点上方节点卡片可重新显示</div>
+          )}
+        </div>
       </div>
     </div>
   );

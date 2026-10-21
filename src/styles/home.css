@@ -1075,6 +1075,9 @@
 
 /* 首页按监控任务聚合的多节点延迟对比：默认折叠，点开后才请求历史数据。 */
 .home-task-ping {
+  --tp-ok: #16a34a;
+  --tp-warn: #d97706;
+  --tp-bad: #dc2626;
   margin-top: 18px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 46%, transparent);
   border-radius: 16px;
@@ -1087,16 +1090,42 @@
 
 .home-task-ping-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  padding: 13px 16px;
+  padding: 12px 16px;
   text-align: start;
   cursor: pointer;
+  transition: background 160ms ease;
 }
 
-.home-task-ping-head:hover .home-task-ping-title {
-  color: var(--text-primary);
+.home-task-ping-head:hover {
+  background: color-mix(in srgb, var(--hover-bg) 60%, transparent);
+}
+
+.home-task-ping-head:focus-visible,
+.home-task-ping-task:focus-visible,
+.home-task-node:focus-visible,
+.home-task-ping-refresh:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+}
+
+.home-task-ping-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+}
+
+.home-task-ping-heading {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
 }
 
 .home-task-ping-title {
@@ -1106,14 +1135,36 @@
 }
 
 .home-task-ping-sub {
+  overflow: hidden;
   font-size: 12px;
   color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-task-ping-badge {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-task-ping-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .home-task-ping-chevron {
-  margin-inline-start: auto;
-  align-self: center;
-  color: var(--text-tertiary);
   transition: transform 160ms ease;
 }
 
@@ -1123,67 +1174,389 @@
 
 .home-task-ping-body {
   display: grid;
-  gap: 12px;
-  padding: 0 16px 16px;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 任务切换：横向可滚动的选项条，当前任务用填充色，不再藏在下拉里。 */
+.home-task-ping-tasks {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.home-task-ping-task {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  min-height: 34px;
+  padding: 0 8px 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-elev-a);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.home-task-ping-task:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.home-task-ping-task[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent-strong) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-strong) 13%, var(--surface-elev-a));
+  color: var(--text-primary);
+}
+
+.home-task-ping-task-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-task-ping-task-type {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 16%, transparent);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.home-task-ping-task[data-active="true"] .home-task-ping-task-type {
+  background: color-mix(in srgb, var(--accent-strong) 20%, transparent);
+  color: var(--accent-strong);
 }
 
 .home-task-ping-controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
-  gap: 10px;
-}
-
-.home-task-ping-field {
-  display: grid;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.home-task-ping-field select {
-  min-width: 200px;
-  max-width: min(320px, calc(100vw - 64px));
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 54%, transparent);
-  border-radius: 10px;
-  background: var(--surface-elev-a);
-  color: var(--text-primary);
-  font-size: 13px;
-}
-
-.home-task-ping-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-inline-start: auto;
+  align-items: center;
+  gap: 10px 12px;
 }
 
 .home-task-ping-hint {
+  margin: 0;
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.home-task-ping-warn {
+  color: var(--tp-warn);
+  font-weight: 600;
+}
+
+.home-task-ping-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin-inline-start: auto;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elev-a);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.home-task-ping-refresh:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.home-task-ping-refresh:disabled {
+  cursor: progress;
+}
+
+.home-task-ping-refresh[data-busy="true"] svg {
+  animation: home-task-ping-spin 0.9s linear infinite;
+}
+
+@keyframes home-task-ping-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.home-task-ping-chart-block {
+  display: grid;
+  gap: 12px;
+  transition: opacity 160ms ease;
+}
+
+.home-task-ping-chart-block[aria-busy="true"] {
+  opacity: 0.72;
+}
+
+/* 节点卡：左侧色条与曲线同色，既是图例也是显隐开关；延迟数字是卡片的重点。 */
+.home-task-ping-nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 8px;
+}
+
+.home-task-node {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-elev-a);
+  color: var(--text-primary);
+  text-align: start;
+  overflow: hidden;
+  transition: opacity 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.home-task-node::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 4px;
+  background: var(--node-color);
+  transition: opacity 160ms ease;
+}
+
+.home-task-node:hover {
+  background: var(--hover-bg);
+  border-color: color-mix(in srgb, var(--node-color) 45%, var(--border));
+}
+
+.home-task-node[data-selected="false"] {
+  opacity: 0.5;
+}
+
+.home-task-node[data-selected="false"]::before {
+  opacity: 0.25;
+}
+
+.home-task-node[data-selected="false"] .home-task-node-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-tertiary);
+}
+
+.home-task-node-name {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-task-node-latency {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-task-node-latency small {
+  margin-inline-start: 3px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.home-task-node-latency[data-timeout="true"] {
+  color: var(--tp-bad);
+  font-size: 16px;
+}
+
+.home-task-node-loss {
+  display: grid;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-task-node-loss-bar {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 18%, transparent);
+  overflow: hidden;
+}
+
+.home-task-node-loss-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tp-ok);
+}
+
+.home-task-node[data-loss="low"] .home-task-node-loss-bar i {
+  background: var(--tp-ok);
+}
+
+.home-task-node[data-loss="mid"] .home-task-node-loss {
+  color: var(--tp-warn);
+}
+
+.home-task-node[data-loss="mid"] .home-task-node-loss-bar i {
+  background: var(--tp-warn);
+}
+
+.home-task-node[data-loss="high"] .home-task-node-loss {
+  color: var(--tp-bad);
+}
+
+.home-task-node[data-loss="high"] .home-task-node-loss-bar i {
+  background: var(--tp-bad);
+}
+
+/* 图表放进内嵌面板，和上方卡片在层次上分开。 */
+.home-task-ping-plot {
+  padding: 10px 12px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-sunken) 55%, transparent);
+}
+
+.home-task-ping-plot-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-task-ping-plot .instance-uplot-wrap.is-large {
+  margin-top: 8px;
 }
 
 .home-task-ping-coverage {
   margin-inline-start: auto;
   font-size: 12px;
   color: var(--text-tertiary);
-}
-
-.home-task-ping-chart-block {
-  display: grid;
-  gap: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .home-task-ping-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 120px;
+  gap: 6px;
+  min-height: 132px;
+  padding: 16px;
   border: 1px dashed var(--border-strong);
   border-radius: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.home-task-ping-empty-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 加载骨架：占位形状与最终布局一致，数据到达时不跳动。 */
+.home-task-ping-loading {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 8px;
+}
+
+.home-task-ping-skeleton {
+  display: block;
+  border-radius: 12px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-tertiary) 10%, transparent) 25%,
+    color-mix(in srgb, var(--text-tertiary) 20%, transparent) 50%,
+    color-mix(in srgb, var(--text-tertiary) 10%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: home-task-ping-shimmer 1.4s ease-in-out infinite;
+}
+
+.home-task-ping-skeleton.is-chip {
+  flex: 0 0 auto;
+  width: 112px;
+  height: 34px;
+  border-radius: 999px;
+}
+
+.home-task-ping-skeleton.is-node {
+  height: 82px;
+}
+
+.home-task-ping-skeleton.is-plot {
+  grid-column: 1 / -1;
+  height: 240px;
+}
+
+@keyframes home-task-ping-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.home-task-ping-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .home-task-ping-sub,
+  .home-task-ping-toggle {
+    display: none;
+  }
+
+  .home-task-ping-body {
+    padding-inline: 12px;
+  }
+
+  .home-task-ping-nodes,
+  .home-task-ping-loading {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-task-ping-coverage {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-task-ping-skeleton,
+  .home-task-ping-refresh[data-busy="true"] svg {
+    animation: none;
+  }
+
+  .home-task-ping-chevron,
+  .home-task-node,
+  .home-task-node::before,
+  .home-task-ping-chart-block {
+    transition: none;
+  }
 }
