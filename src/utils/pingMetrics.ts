@@ -27,7 +27,7 @@ function seriesKey(client: string, taskId: number) {
 }
 
 export function resolvePingSampleCounts(
-  sample: Pick<PingRecord, "value" | "count" | "lost_count" | "loss">,
+  sample: Pick<PingRecord, "value" | "count" | "loss">,
 ) {
   const total =
     typeof sample.count === "number" && Number.isFinite(sample.count) && sample.count > 0
@@ -35,9 +35,7 @@ export function resolvePingSampleCounts(
       : 1;
   const reportedLoss = sample.loss;
   const lost =
-    typeof sample.lost_count === "number" && Number.isFinite(sample.lost_count)
-      ? Math.min(total, Math.max(0, Math.round(sample.lost_count)))
-      : typeof reportedLoss === "number" && Number.isFinite(reportedLoss)
+    typeof reportedLoss === "number" && Number.isFinite(reportedLoss)
       ? Math.min(total, Math.max(0, Math.round((reportedLoss / 100) * total)))
       : sample.value < 0
         ? total

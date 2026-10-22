@@ -259,7 +259,6 @@ export const PingRecordSchema = z
     value: z.number(),
     client: z.string().default(""),
     count: z.number().optional(),
-    lost_count: z.number().optional(),
     loss: z.number().nullable().optional(),
     raw: z.boolean().optional(),
   })
