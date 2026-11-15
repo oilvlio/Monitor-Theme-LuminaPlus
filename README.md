@@ -17,7 +17,7 @@ LuminaPlus 是为 [monitor](https://github.com/monitor-probe/monitor) 移植的�
 - 多探测点 Ping 延迟与丢包历史图表
 - 今日流量、速率历史和峰值统计
 - 费用、账单周期、到期时间和资产统计
-- 国家地区筛选、亮色/暗色外观、背景图片、桌面视频和环境动效
+- 国家地区筛选、亮色/暗色外观、背景图片、桌面视频、锦鲤水塘和环境动效
 - 桌面、平板和移动端布局
 
 ## 当前限制
@@ -107,6 +107,14 @@ tag 必须与 `version` 一致（`v1.2.3` 对 `1.2.3`），否则工作流会直
 桌面端与移动端背景图互为回退：只填一侧时另一侧使用同一张图，同一个背景在手机和电脑上都会生效；
 两端都填则各用各的。
 
+### 锦鲤水塘（内置动画背景）
+
+背景类型选「锦鲤水塘」即可启用内置的 ASCII 锦鲤动画背景（引擎来自
+`src/vendor/ascii-pond/`，MIT 许可）：锦鲤以字形瓦片绘制，游在背景图/纯色之上、卡片内容
+之下，桌面与手机都会渲染（手机自动降低鱼数、帧率和 DPR），系统减少动态效果或开启省流量
+时自动停止。点击空白水面可以投喂；已配置的背景图会垫在水塘下方继续生效，缩放方式与
+对齐位置对水塘不生效。
+
 ### 背景遮罩（压暗/提亮背景，保护眼睛）
 
 主题设置第 3 节有「浅色模式遮罩」和「深色模式遮罩」两个 0–100 的输入框：它在背景图或桌面视频
@@ -153,6 +161,7 @@ tag 必须与 `version` 一致（`v1.2.3` 对 `1.2.3`），否则工作流会直
 
 - [shanyang242/Komari-Theme-LuminaPlus](https://github.com/shanyang242/Komari-Theme-LuminaPlus)
 - [stqfdyr/komari-theme-Lumina](https://github.com/stqfdyr/komari-theme-Lumina)
+- [stqfdyr/ascii-pond](https://github.com/stqfdyr/ascii-pond)（锦鲤水塘背景的 ASCII 引擎）
 - [monitor-probe/monitor](https://github.com/monitor-probe/monitor)
 - [monitor-probe/monitor-theme-default](https://github.com/monitor-probe/monitor-theme-default)
 

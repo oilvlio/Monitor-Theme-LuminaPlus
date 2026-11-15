@@ -64,7 +64,7 @@ export function normalizeBackgroundVideoUrl(value: unknown): string {
 
 export interface BackgroundVideoSourceInput {
   enabled: boolean;
-  mediaType: "image" | "video";
+  mediaType: "image" | "video" | "pond";
   videoUrl: string;
   videoUrlDark: string;
   appearance: ResolvedAppearance;
@@ -180,7 +180,7 @@ const BACKGROUND_CACHE_KEY = "monitor-luminaplus:bg";
 
 interface BackgroundSettingsInput {
   enableBackgroundImage: boolean;
-  backgroundMediaType: "image" | "video";
+  backgroundMediaType: "image" | "video" | "pond";
   backgroundImage: string;
   backgroundImageMobile: string;
   backgroundVideo: string;
@@ -203,6 +203,8 @@ interface BackgroundCache {
   scrim: string;
   /** 深色模式的遮罩 CSS;旧缓存没有这个字段,读的一侧回退到 scrim。 */
   scrimDark?: string;
+  /** 锦鲤水塘模式:不依赖背景图也要让卡片透明度与遮罩生效。 */
+  pond?: boolean;
   lightDesktop: string;
   lightMobile: string;
   darkDesktop: string;
@@ -230,10 +232,19 @@ export function buildBackgroundCache(settings: BackgroundSettingsInput): Backgro
   const darkDesktop = desktopImage.dark || mobileImage.dark;
   const lightMobile = mobileImage.light || desktopImage.light;
   const darkMobile = mobileImage.dark || desktopImage.dark;
+  const hasPond = settings.backgroundMediaType === "pond";
   const hasVideo =
     settings.backgroundMediaType === "video" &&
     Boolean(settings.backgroundVideo || settings.backgroundVideoDark);
-  if (!lightDesktop && !darkDesktop && !lightMobile && !darkMobile && !hasVideo) return null;
+  if (
+    !lightDesktop &&
+    !darkDesktop &&
+    !lightMobile &&
+    !darkMobile &&
+    !hasVideo &&
+    !hasPond
+  )
+    return null;
 
   const { size, position } = parseBackgroundAlignment(settings.backgroundAlignment);
   const scrimPct = computeBackgroundScrim(settings.surfaceOpacity);
@@ -244,6 +255,7 @@ export function buildBackgroundCache(settings: BackgroundSettingsInput): Backgro
   return {
     v: 2,
     desktopVideo: hasVideo,
+    pond: hasPond,
     size,
     position,
     alpha: String(normalizeSurfaceOpacity(settings.surfaceOpacity)),
@@ -291,7 +303,8 @@ export function applyBackgroundCache(
   const renderedDesktop = suppressDesktopImage ? "none" : desktop;
   const selectedImage = options.isMobile ? mobile : renderedDesktop;
   const videoIsPlaying = !options.isMobile && videoState === "playing";
-  const active = videoIsPlaying || selectedImage !== "none";
+  // 水塘模式下即使没有背景图,卡片透明度与遮罩也要随水塘生效。
+  const active = videoIsPlaying || cache.pond === true || selectedImage !== "none";
   // 深色模式用深色遮罩;旧缓存(v2 之前只写了一个 scrim)继续沿用同一层。
   const scrim = (dark ? (cache.scrimDark ?? cache.scrim) : cache.scrim) ?? "";
   root.style.setProperty("--bg-image-desktop", renderedDesktop);

@@ -102,6 +102,12 @@ describe("normalizeThemeSettings", () => {
     expect(settings.backgroundVideoDark).toBe("");
   });
 
+  it("accepts the pond background media type", () => {
+    expect(normalizeThemeSettings({ backgroundMediaType: "pond" }).backgroundMediaType).toBe(
+      "pond",
+    );
+  });
+
   it("keeps mini and falls unknown saved view modes back to compact", () => {
     const settings = normalizeThemeSettings({
       desktopNodeViewMode: "retired-view",

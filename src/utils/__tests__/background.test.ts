@@ -392,6 +392,17 @@ describe("buildBackgroundCache", () => {
     expect(JSON.stringify(cache)).not.toContain("/background.mp4");
   });
 
+  it("marks pond-only settings so surface settings survive without an image", () => {
+    // 水塘模式不需要背景图,但卡片透明度和遮罩仍要生效,缓存必须存在并带上 pond 标记。
+    const cache = buildBackgroundCache({ ...base, backgroundMediaType: "pond" });
+
+    expect(cache).not.toBeNull();
+    expect(cache?.pond).toBe(true);
+    expect(cache?.desktopVideo).toBe(false);
+    expect(cache?.lightDesktop).toBe("none");
+    expect(cache?.darkMobile).toBe("none");
+  });
+
   it("omits the scrim at full opacity but includes it when transparent", () => {
     const solid = buildBackgroundCache({ ...base, backgroundImage: "/a.webp" });
     expect(solid?.scrim).toBe("");
@@ -567,6 +578,18 @@ describe("applyBackgroundCache", () => {
 
     expect(properties.get("--surface-alpha")).toBe("50");
     expect(properties.get("--bg-scrim")).toContain("color-mix");
+  });
+
+  it("writes surface variables for pond mode even when no image is configured", () => {
+    const cache = buildBackgroundCache({ ...base, backgroundMediaType: "pond" });
+    expect(cache?.pond).toBe(true);
+    const { properties } = installDocumentStyle();
+
+    applyBackgroundCache(cache, "light", { isMobile: false });
+
+    expect(properties.get("--surface-alpha")).toBe("50");
+    expect(properties.get("--bg-scrim")).toContain("color-mix");
+    expect(properties.get("--bg-image-desktop")).toBe("none");
   });
 
   it("hides the desktop fallback while loading and restores it after failure", () => {

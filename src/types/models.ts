@@ -156,7 +156,7 @@ export interface ThemeSettings {
   >;
   costRateApiUrl?: string;
   enableBackgroundImage?: boolean;
-  backgroundMediaType?: "image" | "video";
+  backgroundMediaType?: "image" | "video" | "pond";
   backgroundImage?: string;
   backgroundImageMobile?: string;
   backgroundVideo?: string;

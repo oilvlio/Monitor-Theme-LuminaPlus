@@ -136,13 +136,14 @@
               style.setProperty("--bg-image-mobile", mobile);
               style.setProperty("--bg-size", sizes.has(bg.size) ? bg.size : "cover");
               style.setProperty("--bg-position", positions.has(bg.position) ? bg.position : "center");
+              // 锦鲤水塘模式不依赖背景图,同样要让卡片透明度与遮罩在首帧生效。
               const selectedImage = isMobile ? mobile : desktop;
-              if (selectedImage !== "none") {
+              if (selectedImage !== "none" || bg.pond === true) {
                 style.setProperty("--surface-alpha", String(alpha));
               } else {
                 style.removeProperty("--surface-alpha");
               }
-              if (selectedImage !== "none" && scrim) {
+              if ((selectedImage !== "none" || bg.pond === true) && scrim) {
                 style.setProperty("--bg-scrim", scrim);
               } else {
                 style.removeProperty("--bg-scrim");

@@ -36,7 +36,7 @@ import {
 
 export type Appearance = "system" | "light" | "dark";
 export type NodeViewMode = "large" | "compact" | "mini" | "list";
-export type BackgroundMediaType = "image" | "video";
+export type BackgroundMediaType = "image" | "video" | "pond";
 export type AmbientEffect =
   | "sakura"
   | "rain"
@@ -244,7 +244,8 @@ function normalizePlainText(value: unknown) {
 }
 
 function normalizeBackgroundMediaType(value: unknown): BackgroundMediaType {
-  return value === "video" ? "video" : "image";
+  if (value === "video" || value === "pond") return value;
+  return "image";
 }
 
 export function isAmbientEffect(value: unknown): value is AmbientEffect {

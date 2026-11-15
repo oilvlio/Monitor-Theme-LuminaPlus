@@ -10,6 +10,7 @@ import {
   CircleDollarSign,
   EyeOff,
   Grid3x3,
+  Fish,
   ImageIcon,
   LayoutTemplate,
   LayoutGrid,
@@ -119,6 +120,7 @@ const BACKGROUND_MEDIA_TYPE_OPTIONS: Array<{
 }> = [
   { value: "image", label: "图片", icon: ImageIcon },
   { value: "video", label: "视频", icon: Video },
+  { value: "pond", label: "锦鲤水塘", icon: Fish },
 ];
 const BACKGROUND_SIZE_OPTIONS: Array<{ value: BackgroundSize; label: string }> = [
   { value: "cover", label: "填满" },
@@ -1258,7 +1260,8 @@ export function ThemeManage() {
         normalizeBackgroundUrl(draft.backgroundImage) ||
         normalizeBackgroundUrl(draft.backgroundImageMobile) ||
         draft.backgroundMediaType === "video" &&
-        (draft.backgroundVideo || draft.backgroundVideoDark),
+        (draft.backgroundVideo || draft.backgroundVideoDark) ||
+        draft.backgroundMediaType === "pond",
     );
   const acquiredAtMax = localDateInputMax();
 
@@ -1434,14 +1437,14 @@ export function ThemeManage() {
       <InstancePanel
         kicker={<><span className="instance-panel-kicker-num">03</span>背景</>}
         title="背景与透明度"
-        description="为站点设置自定义背景图或桌面视频，并调节卡片不透明度。"
+        description="为站点设置自定义背景图、桌面视频或锦鲤水塘动画，并调节卡片不透明度。"
         aside={<Wallpaper size={16} />}
       >
         <div className="flex flex-col gap-4">
           <ToggleRow
             field="enableBackgroundImage"
             title="启用自定义背景"
-            desc="关闭后不加载任何背景图或视频（下方 URL 配置会保留），站点回到纯色主题；再次开启即恢复。"
+            desc="关闭后不加载任何背景图、视频或锦鲤水塘（下方 URL 配置会保留），站点回到纯色主题；再次开启即恢复。"
             checked={draft.enableBackgroundImage}
             onPatch={patch}
           />
@@ -1478,7 +1481,7 @@ export function ThemeManage() {
           </div>
 
           <div className="surface-inset flex flex-col gap-3 px-4 py-4">
-            <div className="text-[13px] font-semibold text-[var(--text-primary)]">桌面端背景类型</div>
+            <div className="text-[13px] font-semibold text-[var(--text-primary)]">背景类型</div>
             <div className="instance-segmented">
               {BACKGROUND_MEDIA_TYPE_OPTIONS.map(({ value, label, icon: Icon }) => (
                 <button
@@ -1494,6 +1497,12 @@ export function ThemeManage() {
                 </button>
               ))}
             </div>
+            {draft.backgroundMediaType === "pond" && (
+              <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+                内置的 ASCII 锦鲤水塘动画：桌面和手机都会渲染，系统减少动态效果或开启省流量时自动停止。
+                已配置的背景图会垫在水塘下方继续生效；点击空白水面可以投喂锦鲤。缩放方式与对齐位置对水塘不生效。
+              </span>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

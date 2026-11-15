@@ -105,6 +105,19 @@ body::after {
   }
 }
 
+/* 锦鲤水塘背景:透明 canvas,锦鲤字形游在 body::before 的背景图/纯色之上、内容之下。
+   引擎自己监听窗口点击转成投喂(交互元素自动忽略),所以保持 pointer-events:none;
+   z-index 与视频层一致,缩放方式/对齐位置这些图片专用设置对它不生效。 */
+.pond-background-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
 /* 可选的主题氛围动效：轻量覆盖普通内容但不拦截交互；菜单和模态层仍按各自
    z-index 绘制在它上方。覆盖而非藏在卡片下，才能让雨滴、樱花等在纯色主题中可见。 */
 .ambient-effect-layer {
