@@ -30,6 +30,7 @@ interface LoadRecordsOptions extends ApiCallOptions {
 interface MonitorMe {
   authed?: boolean;
   github?: boolean;
+  history_days?: number;
   site_name?: string;
   public_page?: boolean;
 }
@@ -531,7 +532,7 @@ export async function getPublic(options?: ApiCallOptions): Promise<PublicConfig>
     record_enabled: true,
     record_preserve_time: 0,
     ping_record_preserve_time: 0,
-    metric_retention_days: 7,
+    metric_retention_days: number(me.history_days, 7),
     custom_head: "",
     custom_body: "",
     theme_settings: themeSettings,

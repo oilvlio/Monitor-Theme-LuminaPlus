@@ -72,68 +72,121 @@ interface TimeRangeOption {
   value: number;
 }
 
-// load 和 ping 共用同一套历史区间预设；唯一区别是是否在前面加 "实时" 选项，这由
-// buildHistoryRangeOptions 的 includeRealtime 标志处理，而非改预设列表本身。
-const TIME_RANGE_OPTIONS: TimeRangeOption[] = [
-  { label: "1 小时", value: 1 },
+const DETAIL_TIME_RANGE_OPTIONS: TimeRangeOption[] = [
   { label: "4 小时", value: 4 },
   { label: "1 天", value: 24 },
+  { label: "3 天", value: 72 },
   { label: "7 天", value: 168 },
-  { label: "30 天", value: 720 },
+  { label: "15 天", value: 360 },
 ];
 
-// Ping 详情只保留高分辨率仍有观察价值的四档。metric store 虽可保留更久，
-// 但 30/90 天会退化到小时级 rollup，不再放进详情页快捷范围。
-const PING_TIME_RANGE_OPTIONS: TimeRangeOption[] = TIME_RANGE_OPTIONS.filter(
-  (option) => option.value <= 168,
-);
-
-function formatRangeLabel(hours: number) {
-  if (hours % 24 === 0) {
-    const days = hours / 24;
-    return `${days} 天`;
-  }
-
-  return `${hours} 小时`;
-}
-
-function buildHistoryRangeOptions(
-  presets: TimeRangeOption[],
-  maxHours: number | null | undefined,
-  includeRealtime: boolean,
-) {
-  const options = includeRealtime ? [{ label: "实时", value: 0 }] : [];
+function buildDetailTimeRangeOptions(maxHours: number | null | undefined) {
   if (!Number.isFinite(maxHours) || !maxHours || maxHours <= 0) {
-    return [...options, ...presets];
+    return [...DETAIL_TIME_RANGE_OPTIONS];
   }
 
   const safeMaxHours = Math.floor(maxHours);
-  const resolved = presets.filter((option) => option.value <= safeMaxHours);
-  const hasExactMatch = resolved.some((option) => option.value === safeMaxHours);
-  const largestPreset = presets[presets.length - 1]?.value ?? 0;
-
-  // 保留时间大于前端最长快捷档时，不再把它动态追加成 90 天等超长按钮。
-  // 小于最长档的非标准保留时间仍会显示，避免让用户选到后端已清理的数据范围。
-  if (safeMaxHours > 0 && safeMaxHours < largestPreset && !hasExactMatch) {
-    resolved.push({
-      label: formatRangeLabel(safeMaxHours),
-      value: safeMaxHours,
-    });
-  }
-
-  return [...options, ...resolved];
+  return DETAIL_TIME_RANGE_OPTIONS.filter((option) => option.value <= safeMaxHours);
 }
 
 export function buildLoadTimeRangeOptions(maxHours: number | null | undefined) {
-  return buildHistoryRangeOptions(TIME_RANGE_OPTIONS, maxHours, true);
+  return buildDetailTimeRangeOptions(maxHours);
 }
 
 export function buildPingTimeRangeOptions(maxHours: number | null | undefined) {
-  if (!Number.isFinite(maxHours) || !maxHours || maxHours <= 0) {
-    return [...PING_TIME_RANGE_OPTIONS];
+  return buildDetailTimeRangeOptions(maxHours);
+}
+
+export function getTimeAxisSpace(rangeHours: number) {
+  if (rangeHours >= 168) return 110;
+  if (rangeHours >= 72) return 100;
+  if (rangeHours >= 24) return 90;
+  if (rangeHours >= 4) return 80;
+  return 70;
+}
+
+// 进程数/连接数这类计数没有小数。uPlot 默认刻度会按像素高度取 2.5 之类的步长，
+// 于是出现 72.5/75.0 这种刻度；稳定的小数值还会让整条轴只落一个刻度。
+// 计数轴统一用整数边界，并保证至少 4 个单位的窗口，让刻度稳定落在整数上。
+export function getCountAxisRange(min: number, max: number): [number, number] {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 4];
+  const lower = Math.max(0, Math.floor(Math.min(min, max)));
+  const upper = Math.ceil(Math.max(min, max));
+  if (upper - lower < 4) {
+    // 窗口太窄时向两侧补齐，避免把平坦的曲线贴在底边。
+    const shift = Math.ceil((4 - (upper - lower)) / 2);
+    const padded = Math.max(0, lower - shift);
+    return [padded, padded + 4];
   }
-  const safeMaxHours = Math.floor(maxHours);
-  return PING_TIME_RANGE_OPTIONS.filter((option) => option.value <= safeMaxHours);
+  return [lower, upper];
+}
+
+const AXIS_STEP_FACTORS = [1, 2, 2.5, 5] as const;
+
+function axisStepCandidates(span: number, integerOnly: boolean): number[] {
+  const magnitude = 10 ** Math.floor(Math.log10(span));
+  const steps = new Set<number>();
+  for (const scale of [magnitude / 100, magnitude / 10, magnitude, magnitude * 10]) {
+    for (const factor of AXIS_STEP_FACTORS) {
+      const step = factor * scale;
+      if (!Number.isFinite(step) || step <= 0) continue;
+      if (integerOnly && !Number.isInteger(step)) continue;
+      steps.add(step);
+    }
+  }
+  return [...steps].sort((a, b) => a - b);
+}
+
+function ticksForStep(min: number, max: number, step: number): number[] {
+  const rawStart = Math.ceil(min / step - 1e-9) * step;
+  // 避免 -0 出现在刻度里（Math.ceil(-1e-9) 会得到 -0）。
+  const start = rawStart === 0 ? 0 : rawStart;
+  if (start > max + 1e-9) return [];
+  const ticks: number[] = [];
+  for (let value = start; value <= max + step * 1e-6 && ticks.length < 64; value += step) {
+    ticks.push(value);
+  }
+  return ticks;
+}
+
+/**
+ * 所有 Y 轴共用的刻度：按「大约 3~4 个刻度」挑步长，和磁盘图一致。
+ * 计数轴（进程/连接）只允许整数步长，避免 72.5 这类刻度。
+ */
+export function getAxisTicks(min: number, max: number, integerOnly = false): number[] {
+  const lower = Math.min(min, max);
+  const upper = Math.max(min, max);
+  if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) {
+    return [Number.isFinite(lower) ? lower : 0];
+  }
+
+  let best: number[] = [];
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const step of axisStepCandidates(upper - lower, integerOnly)) {
+    const ticks = ticksForStep(lower, upper, step);
+    if (ticks.length < 2) continue;
+    const score = Math.abs(ticks.length - 3.5);
+    // 同分时取更细的步长，再截到 4 个，避免只剩两个标签。
+    if (score < bestScore - 1e-9 || (Math.abs(score - bestScore) <= 1e-9 && ticks.length > best.length)) {
+      best = ticks;
+      bestScore = score;
+    }
+  }
+
+  if (!best.length) return [lower];
+  const limited = best.length > 4 ? best.slice(0, 4) : best;
+  return integerOnly ? limited.map((value) => Math.round(value)) : limited;
+}
+
+export function getDiskPercentAxisRange(min: number, max: number): [number, number] {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 100];
+  const lower = Math.max(0, Math.min(90, Math.floor(min / 5) * 5));
+  let upper = Math.min(100, Math.ceil(max / 5) * 5);
+
+  // A very stable disk percentage should not get a tiny auto-scaled axis that
+  // visually exaggerates small changes. Keep at least a 10-point window.
+  if (upper - lower < 10) upper = lower + 10;
+  return [lower, upper];
 }
 
 const GRID_CHART_DEFAULT = { w: 320, h: 132 };
@@ -171,7 +224,10 @@ function getDateParts(timestampSeconds: number) {
 
 function formatAxisTime(timestampSeconds: number, rangeHours: number) {
   const parts = getDateParts(timestampSeconds);
-  if (rangeHours >= 72) return `${parts.month}/${parts.day}`;
+  if (rangeHours >= 72) {
+    if (parts.hour === "00" && parts.minute === "00") return `${parts.month}/${parts.day}`;
+    return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+  }
   return `${parts.hour}:${parts.minute}`;
 }
 

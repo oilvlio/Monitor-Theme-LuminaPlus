@@ -20,6 +20,10 @@ import {
   createTimeAxisFormatter,
   formatChartCoverageTime,
   getAxisColors,
+  getAxisTicks,
+  getCountAxisRange,
+  getDiskPercentAxisRange,
+  getTimeAxisSpace,
   toChartSeconds,
   useResponsiveChartSize,
   type ChartTooltipState,
@@ -36,6 +40,16 @@ import { resolveLoadRecordTotals } from "@/utils/loadMetrics";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { LoadRecord, NodeMetrics } from "@/types/models";
 
+type AxisKind = "percent" | "disk-percent" | "network" | "count";
+
+// 所有 Y 轴都按 3~4 个刻度生成，和磁盘图一致；计数轴只取整数。
+const Y_AXIS_SPLITS: Record<AxisKind, uPlot.Axis.Splits> = {
+  percent: (_self, _axisIdx, min, max) => getAxisTicks(min, max),
+  "disk-percent": (_self, _axisIdx, min, max) => getAxisTicks(min, max),
+  network: (_self, _axisIdx, min, max) => getAxisTicks(min, max),
+  count: (_self, _axisIdx, min, max) => getAxisTicks(min, max, true),
+};
+
 const LOAD_HISTORY_SAMPLE_LIMIT = 360;
 const LOAD_HISTORY_RENDER_LIMIT = 720;
 const REALTIME_HISTORY_SEED_LIMIT = 120;
@@ -47,6 +61,10 @@ const MEMORY_KEYS = ["ram", "swap"];
 const MEMORY_COLORS = [CHART_PALETTE.memory, CHART_PALETTE.warning];
 const DISK_KEYS = ["disk"];
 const DISK_COLORS = [CHART_PALETTE.disk];
+const DISK_PERCENT_SCALE_RANGE: uPlot.Range.Function = (_self, min, max) =>
+  getDiskPercentAxisRange(min, max);
+// 进程数、连接数都是整数计数：轴范围取整，刻度用整数步长。
+const COUNT_SCALE_RANGE: uPlot.Range.Function = (_self, min, max) => getCountAxisRange(min, max);
 const NETWORK_KEYS = ["netIn", "netOut"];
 const NETWORK_COLORS = [CHART_PALETTE.success, CHART_PALETTE.cpu];
 const CONNECTION_KEYS = ["connections", "udp"];
@@ -161,14 +179,16 @@ function formatPercentAxisValue(value: number, min: number, max: number) {
   return `${Math.round(value)}%`;
 }
 
+function formatDiskPercentAxisValue(value: number) {
+  return `${Math.round(value)}%`;
+}
+
 function formatNetworkAxisValue(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "";
   return formatTrafficRateLabel(value);
 }
 
-function formatCountAxisValue(value: number, min: number, max: number) {
-  const span = Math.abs(max - min);
-  if (span < 10) return value.toFixed(1);
+function formatCountAxisValue(value: number) {
   return `${Math.round(value)}`;
 }
 
@@ -185,6 +205,7 @@ function buildBaseOptions({
   axisKind,
   axisSize = 52,
   xRange,
+  yRange,
 }: {
   title: string;
   keys: string[];
@@ -192,9 +213,10 @@ function buildBaseOptions({
   resolvedAppearance: "light" | "dark";
   rangeHours: number;
   spanGaps?: boolean;
-  axisKind: "percent" | "network" | "count";
+  axisKind: AxisKind;
   axisSize?: number;
   xRange?: [number, number] | null;
+  yRange?: uPlot.Scale.Range;
 }): Omit<uPlot.Options, "width" | "height"> {
   const isDark = resolvedAppearance === "dark";
   const { grid, text } = getAxisColors(isDark);
@@ -205,13 +227,16 @@ function buildBaseOptions({
     legend: { show: false },
     scales: {
       x: xRange ? { time: true, auto: false, range: () => xRange } : { time: true },
-      y: { auto: true },
+      y: yRange || axisKind === "count"
+        ? { auto: true, range: yRange ?? COUNT_SCALE_RANGE }
+        : { auto: true },
     },
     axes: [
       {
         stroke: text,
         grid: { stroke: grid, width: 1 },
         ticks: { stroke: grid },
+        space: getTimeAxisSpace(rangeHours),
         size: rangeHours >= 72 ? 38 : 34,
         values: createTimeAxisFormatter(rangeHours),
       },
@@ -220,14 +245,16 @@ function buildBaseOptions({
         grid: { stroke: grid, width: 1 },
         ticks: { stroke: grid },
         size: axisSize,
+        splits: Y_AXIS_SPLITS[axisKind],
         values: (self, splits) => {
           const min = Number(self.scales.y.min ?? 0);
           const max = Number(self.scales.y.max ?? 0);
           return splits.map((value) => {
-            if (value === 0 && axisKind !== "percent") return "";
+            if (value === 0 && axisKind === "network") return "";
             if (axisKind === "network") return formatNetworkAxisValue(value);
+            if (axisKind === "disk-percent") return formatDiskPercentAxisValue(value);
             if (axisKind === "percent") return formatPercentAxisValue(value, min, max);
-            return formatCountAxisValue(value, min, max);
+            return formatCountAxisValue(value);
           });
         },
       },
@@ -270,6 +297,7 @@ const ChartCard = memo(function ChartCard({
   axisKind,
   axisSize,
   xRange,
+  yRange,
 }: {
   icon: ReactNode;
   title: string;
@@ -283,9 +311,10 @@ const ChartCard = memo(function ChartCard({
   rangeHours: number;
   unit?: string;
   spanGaps?: boolean;
-  axisKind: "percent" | "network" | "count";
+  axisKind: AxisKind;
   axisSize?: number;
   xRange?: [number, number] | null;
+  yRange?: uPlot.Scale.Range;
 }) {
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("grid");
   const dataRef = useRef<uPlot.AlignedData>([[]]);
@@ -312,8 +341,9 @@ const ChartCard = memo(function ChartCard({
         axisKind,
         axisSize,
         xRange,
+        yRange,
       }),
-    [axisKind, axisSize, colors, keys, rangeHours, resolvedAppearance, spanGaps, title, xRange],
+    [axisKind, axisSize, colors, keys, rangeHours, resolvedAppearance, spanGaps, title, xRange, yRange],
   );
 
   const enhancedOptions = useMemo<Omit<uPlot.Options, "width" | "height">>(() => {
@@ -634,7 +664,8 @@ export function LoadChart({
           rangeHours={hours}
           unit="%"
           spanGaps={connectNulls}
-          axisKind="percent"
+          axisKind="disk-percent"
+          yRange={DISK_PERCENT_SCALE_RANGE}
           xRange={requestedXRange}
         />
         <ChartCard

@@ -9,6 +9,7 @@ describe("monitor site metadata adapter", () => {
       new Response(JSON.stringify(input === "/api/me" ? {
         authed: true,
         github: true,
+        history_days: 30,
         site_name: "Fleet",
         public_page: true,
       } : {
@@ -23,6 +24,7 @@ describe("monitor site metadata adapter", () => {
       theme: "LuminaPlus",
       oauth_enable: true,
       private_site: false,
+      metric_retention_days: 30,
       theme_settings: { showGroupTabs: false },
     });
     expect(fetchMock).toHaveBeenCalledWith(

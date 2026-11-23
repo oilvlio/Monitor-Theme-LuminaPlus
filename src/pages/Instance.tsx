@@ -14,7 +14,7 @@ import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useNodeMeta, useNodeStoreStatus } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 
-const DEFAULT_PING_HOURS = 4;
+const DEFAULT_HISTORY_HOURS = 24;
 type TimeRangeOption = ReturnType<typeof buildLoadTimeRangeOptions>[number];
 
 function RangeSelector({
@@ -50,8 +50,8 @@ export function Instance() {
   const meta = useNodeMeta(uuid ?? "");
   const storeStatus = useNodeStoreStatus(Boolean(uuid));
   const [chartType, setChartType] = useState<"load" | "ping">("load");
-  const [loadHours, setLoadHours] = useState(0);
-  const [pingHours, setPingHours] = useState(DEFAULT_PING_HOURS);
+  const [loadHours, setLoadHours] = useState(DEFAULT_HISTORY_HOURS);
+  const [pingHours, setPingHours] = useState(DEFAULT_HISTORY_HOURS);
   const chartControlsRef = useRef<HTMLDivElement | null>(null);
 
   const metricRetentionHours =
@@ -89,9 +89,9 @@ export function Instance() {
   useEffect(() => {
     if (!pingRanges.some((range) => range.value === pingHours)) {
       setPingHours(
-        pingRanges.find((range) => range.value === DEFAULT_PING_HOURS)?.value ??
+        pingRanges.find((range) => range.value === DEFAULT_HISTORY_HOURS)?.value ??
           pingRanges[0]?.value ??
-          DEFAULT_PING_HOURS,
+          DEFAULT_HISTORY_HOURS,
       );
     }
   }, [pingHours, pingRanges]);
