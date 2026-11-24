@@ -19,7 +19,7 @@ import { alignPingChartRecords } from "./pingChartData";
 import {
   clipSeriesToAxis,
   countOverRange,
-  resolveAutoLatencyAxis,
+  resolveAutoLatencyRange,
   type PingSeries,
 } from "./pingRange";
 import {
@@ -328,7 +328,7 @@ export function PingChart({
   }, [chart]);
 
   // 只对可见线路求共用量程；悬停提示仍读 chartRef（未裁剪的原始值），所以超出量程的点也能看到真实数值。
-  const autoAxisMax = useMemo(() => {
+  const autoAxis = useMemo(() => {
     if (!autoRange || !latencyChart) return null;
     const lists: PingSeries[] = [];
     for (const task of visibleTasks) {
@@ -337,8 +337,10 @@ export function PingChart({
         | undefined;
       if (series) lists.push(series);
     }
-    return resolveAutoLatencyAxis(lists);
+    return resolveAutoLatencyRange(lists);
   }, [autoRange, latencyChart, taskIndexById, visibleTasks]);
+  const autoAxisMax = autoAxis?.max ?? null;
+  const autoAxisMin = autoAxis?.min ?? 0;
 
   // 折线数据：超出量程的点置 null，折线在该处断开。
   const plotChart = useMemo(() => {
@@ -374,12 +376,13 @@ export function PingChart({
     }
     if (rows.length === 0) return null;
     return {
+      axisMin: autoAxisMin,
       axisMax: autoAxisMax,
       times: latencyChart[0] as ArrayLike<number>,
       rows,
       stats,
     };
-  }, [autoAxisMax, latencyChart, taskColors, taskIndexById, taskLabels, tasks.length, visibleTasks]);
+  }, [autoAxisMax, autoAxisMin, latencyChart, taskColors, taskIndexById, taskLabels, tasks.length, visibleTasks]);
   const stripExtra = anomalyStrip ? stripExtraHeight(anomalyStrip.rows.length) : 0;
 
   const requestedXRange = useMemo(() => historyChartRangeSeconds(data), [data]);
@@ -404,7 +407,7 @@ export function PingChart({
 
   const yRange = useMemo<[number | null, number | null]>(() => {
     if (!chart) return [null, null];
-    if (chartMetric === "latency" && autoAxisMax != null) return [0, autoAxisMax];
+    if (chartMetric === "latency" && autoAxisMax != null) return [autoAxisMin, autoAxisMax];
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < tasks.length; index += 1) {
@@ -432,7 +435,7 @@ export function PingChart({
     }
     const pad = Math.max(5, (max - min) * 0.12);
     return [Math.max(0, min - pad), max + pad];
-  }, [autoAxisMax, chart, chartMetric, tasks, visibleTaskIds]);
+  }, [autoAxisMax, autoAxisMin, chart, chartMetric, tasks, visibleTaskIds]);
 
   const baseOptions = useMemo<Omit<uPlot.Options, "width" | "height"> | null>(() => {
     if (!chart) return null;
@@ -771,7 +774,11 @@ export function PingChart({
         )}
       </div>
       {anomalyStrip && chart && options && visibleTasks.length > 0 && (
-        <PingAnomalyLegend axisMax={anomalyStrip.axisMax} stats={anomalyStrip.stats} />
+        <PingAnomalyLegend
+          axisMin={anomalyStrip.axisMin}
+          axisMax={anomalyStrip.axisMax}
+          stats={anomalyStrip.stats}
+        />
       )}
     </InstancePanel>
   );

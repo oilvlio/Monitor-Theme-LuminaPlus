@@ -9,9 +9,11 @@ export interface PingAnomalyStat {
 }
 
 export function PingAnomalyLegend({
+  axisMin = 0,
   axisMax,
   stats,
 }: {
+  axisMin?: number;
   axisMax: number;
   stats: readonly PingAnomalyStat[];
 }) {
@@ -45,7 +47,7 @@ export function PingAnomalyLegend({
           丢包 / 无数据（留空）
         </span>
         <span className="instance-ping-anomaly-note">
-          量程 0–{axisMax} ms，超出量程的点不进折线
+          量程 {axisMin}–{axisMax} ms{axisMin > 0 ? "（纵轴未从 0 开始）" : ""}，超出量程的点不进折线
         </span>
       </div>
       <div className="instance-ping-anomaly-stats">

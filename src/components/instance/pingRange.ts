@@ -5,6 +5,9 @@
  * 取各线路延迟的 p95，让它落在量程的 80% 左右（上方留 20% 缓冲）。超出量程的点从折线里
  * 拿掉，改在下方色带里按各自的时间位置落一个点，颜色越深表示越慢。
  *
+ * 低端：延迟水平本身很低的线路从 0 起；基线很高的线路（例如 150ms 左右稳定波动）从 0 起会让
+ * 折线挤在上半截，所以此时把量程下限抬到最低采样附近，并在图例里注明“未从 0 开始”。
+ *
  * 用百分位而不是“排除尖刺后的最大值”：后者的判据依赖相对基线的倍数，对基线很高的线路
  * （150ms 以上）会失效，而百分位对基线高低不敏感，只取决于异常点占比。
  */
@@ -28,6 +31,23 @@ export const DEFAULT_LATENCY_AXIS_MAX = 100;
  * 占比低于 5% 的短时劣化也会进入色带，占比更大的持续劣化则留在折线里。
  */
 export const AUTO_RANGE_PERCENTILE = 0.95;
+
+/** 最低采样不低于 p95 的这个比例时，才允许量程下限不从 0 开始（基线占满上半截的情况）。 */
+export const ZERO_ANCHOR_RATIO = 0.5;
+/** p95 低于这个值（ms）时一律从 0 起：低延迟线路上 1–2ms 的抖动放大后没有意义。 */
+export const ZOOM_MIN_LATENCY_MS = 20;
+/** 下限抬高时，量程跨度至少是 p95 的这个比例，避免把很稳定的线路放大成满屏锯齿。 */
+export const ZOOM_MIN_RANGE_RATIO = 0.25;
+
+/** 抬高下限时使用的刻度步长（ms）。 */
+const RANGE_STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000];
+
+function niceStep(rough: number): number {
+  for (const step of RANGE_STEPS) {
+    if (step >= rough) return step;
+  }
+  return Math.ceil(rough / 1000) * 1000;
+}
 
 export function niceCeil(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return NICE_AXIS_STEPS[0];
@@ -56,21 +76,57 @@ export function seriesPercentile(series: PingSeries, ratio: number): number | nu
   return values[lower] + (values[upper] - values[lower]) * (position - lower);
 }
 
+/** 有效采样的最小值；没有有效采样返回 null。 */
+export function seriesMin(series: PingSeries): number | null {
+  let min: number | null = null;
+  for (let index = 0; index < series.length; index += 1) {
+    const value = series[index];
+    if (isValidLatency(value) && (min == null || value < min)) min = value;
+  }
+  return min;
+}
+
+export interface LatencyRange {
+  min: number;
+  max: number;
+}
+
 /**
- * 多条线路共用一条 Y 轴：取各线路 p95 中的最大者（逐线路取，避免持续劣化的线路被平静的线路稀释），
- * 再留出缓冲并取整。
+ * 多条线路共用一条 Y 轴：上沿取各线路 p95 中的最大者（逐线路取，避免持续劣化的线路被平静的线路稀释），
+ * 下沿取各线路最低采样中的最小者。p95 落在量程的 80% 左右。
  */
-export function resolveAutoLatencyAxis(
+export function resolveAutoLatencyRange(
   seriesList: readonly PingSeries[],
   percentile = AUTO_RANGE_PERCENTILE,
-): number {
+): LatencyRange {
   let top: number | null = null;
+  let bottom: number | null = null;
   for (const series of seriesList) {
-    const value = seriesPercentile(series, percentile);
-    if (value != null && (top == null || value > top)) top = value;
+    const high = seriesPercentile(series, percentile);
+    const low = seriesMin(series);
+    if (high != null && (top == null || high > top)) top = high;
+    if (low != null && (bottom == null || low < bottom)) bottom = low;
   }
-  if (top == null) return DEFAULT_LATENCY_AXIS_MAX;
-  return niceCeil(top / AUTO_RANGE_HEADROOM);
+  if (top == null || bottom == null) return { min: 0, max: DEFAULT_LATENCY_AXIS_MAX };
+
+  const zeroAnchored = top < ZOOM_MIN_LATENCY_MS || bottom < top * ZERO_ANCHOR_RATIO;
+  if (zeroAnchored) return { min: 0, max: niceCeil(top / AUTO_RANGE_HEADROOM) };
+
+  let low = Math.max(0, bottom - 0.1 * Math.max(top - bottom, 2));
+  let high = low + (top - low) / AUTO_RANGE_HEADROOM;
+  const minRange = top * ZOOM_MIN_RANGE_RATIO;
+  if (high - low < minRange) {
+    const pad = (minRange - (high - low)) / 2;
+    low = Math.max(0, low - pad);
+    high += pad;
+  }
+  const step = niceStep((high - low) / 5);
+  const min = Math.max(0, Math.floor(low / step) * step);
+  let max = Math.ceil(high / step) * step;
+  if (max <= min) max = min + step;
+  // 取整下沿后 p95 可能偏高，必要时再抬一格，保证上方仍有缓冲。
+  for (let guard = 0; guard < 4 && (top - min) / (max - min) > 0.85; guard += 1) max += step;
+  return { min, max };
 }
 
 /** -1：在量程内（正常）；0/1/2：超出量程 1–2 倍 / 2–5 倍 / 5 倍以上。 */
