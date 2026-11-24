@@ -84,9 +84,12 @@ preview.png
 
 后台卡片上的作者、版本和「源码」链接都来自 `theme.json`；卡片右侧的刷新按钮会读取
 `url` 指向仓库的最新 release，从中取 `theme.tar.gz` 更新（版本号与 release tag 相同则跳过）。
-发布新版本：改 `theme.json` 与 `package.json` 的 `version`，提交后推送 `vX.Y.Z` tag，
-`.github/workflows/release.yml` 会自动打包并创建 release。
-tag 必须与 `version` 一致（`v1.2.3` 对 `1.2.3`），否则工作流会直接失败、不发布。
+发布新版本：在 GitHub Actions 里手动运行 `release` 工作流，填入版本号（如 `0.2.20`，
+也可以写 `v0.2.20`；留空则自动在当前版本上 +1 patch）。工作流会自动同步
+`package.json`、`package-lock.json` 与 `theme.json` 的版本，提交 `chore: release X.Y.Z`
+并推回默认分支，然后打 tag、打包并创建 release，不用再手动改这几个 JSON 文件。
+仍然可以手动推送 `vX.Y.Z` tag 触发发布，这时 tag 必须与两处 `version` 一致
+（`v1.2.3` 对 `1.2.3`），否则工作流会直接失败、不发布。
 
 也可以手动解压到 hub 的主题目录：
 

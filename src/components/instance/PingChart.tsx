@@ -17,6 +17,18 @@ import {
 import { ChartTooltip, SwitchToggle } from "./ChartParts";
 import { alignPingChartRecords } from "./pingChartData";
 import {
+  clipSeriesToAxis,
+  countOverRange,
+  resolveAutoLatencyAxis,
+  type PingSeries,
+} from "./pingRange";
+import {
+  CHART_BASE_BOTTOM_PADDING,
+  drawAnomalyStrip,
+  stripExtraHeight,
+} from "./pingAnomalyStrip";
+import { PingAnomalyLegend } from "./PingAnomalyLegend";
+import {
   cutPeakValues,
   detectTypicalIntervalSeconds,
   downsampleAligned,
@@ -151,6 +163,8 @@ export function PingChart({
   const [chartMetric, setChartMetric] = useState<"latency" | "loss">("latency");
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
+  // 自动量程：折线按各线路 p95（约占量程 80%）定量程，超出的点改在下方异常色带里显示。
+  const [autoRange, setAutoRange] = useState(true);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
   const [tooltip, setTooltip] = useState<ChartTooltipState>({
     show: false,
@@ -313,6 +327,61 @@ export function PingChart({
     if (chart) chartRef.current = chart;
   }, [chart]);
 
+  // 只对可见线路求共用量程；悬停提示仍读 chartRef（未裁剪的原始值），所以超出量程的点也能看到真实数值。
+  const autoAxisMax = useMemo(() => {
+    if (!autoRange || !latencyChart) return null;
+    const lists: PingSeries[] = [];
+    for (const task of visibleTasks) {
+      const series = latencyChart[(taskIndexById.get(task.id) ?? 0) + 1] as
+        | PingSeries
+        | undefined;
+      if (series) lists.push(series);
+    }
+    return resolveAutoLatencyAxis(lists);
+  }, [autoRange, latencyChart, taskIndexById, visibleTasks]);
+
+  // 折线数据：超出量程的点置 null，折线在该处断开。
+  const plotChart = useMemo(() => {
+    if (!chart || autoAxisMax == null) return chart;
+    return [
+      chart[0],
+      ...chart.slice(1).map((series) => clipSeriesToAxis(series as PingSeries, autoAxisMax)),
+    ] as uPlot.AlignedData;
+  }, [autoAxisMax, chart]);
+
+  const anomalyStrip = useMemo(() => {
+    if (autoAxisMax == null || !latencyChart) return null;
+    const rows: Array<{ color: string; values: PingSeries }> = [];
+    const stats: Array<{
+      id: number;
+      label: string;
+      color: string;
+      valid: number;
+      over: number;
+    }> = [];
+    for (const task of visibleTasks) {
+      const index = taskIndexById.get(task.id) ?? 0;
+      const values = latencyChart[index + 1] as PingSeries | undefined;
+      if (!values) continue;
+      const color = taskColors.get(task.id) ?? colorForSeries(index, tasks.length);
+      rows.push({ color, values });
+      stats.push({
+        id: task.id,
+        label: taskLabels.get(task.id) ?? `任务 #${task.id}`,
+        color,
+        ...countOverRange(values, autoAxisMax),
+      });
+    }
+    if (rows.length === 0) return null;
+    return {
+      axisMax: autoAxisMax,
+      times: latencyChart[0] as ArrayLike<number>,
+      rows,
+      stats,
+    };
+  }, [autoAxisMax, latencyChart, taskColors, taskIndexById, taskLabels, tasks.length, visibleTasks]);
+  const stripExtra = anomalyStrip ? stripExtraHeight(anomalyStrip.rows.length) : 0;
+
   const requestedXRange = useMemo(() => historyChartRangeSeconds(data), [data]);
   const coverageMeta = useMemo(() => {
     if (!data) return null;
@@ -335,6 +404,7 @@ export function PingChart({
 
   const yRange = useMemo<[number | null, number | null]>(() => {
     if (!chart) return [null, null];
+    if (chartMetric === "latency" && autoAxisMax != null) return [0, autoAxisMax];
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < tasks.length; index += 1) {
@@ -362,7 +432,7 @@ export function PingChart({
     }
     const pad = Math.max(5, (max - min) * 0.12);
     return [Math.max(0, min - pad), max + pad];
-  }, [chart, chartMetric, tasks, visibleTaskIds]);
+  }, [autoAxisMax, chart, chartMetric, tasks, visibleTaskIds]);
 
   const baseOptions = useMemo<Omit<uPlot.Options, "width" | "height"> | null>(() => {
     if (!chart) return null;
@@ -400,7 +470,7 @@ export function PingChart({
           })),
     });
     return {
-      padding: [10, 14, 12, 2],
+      padding: [10, 14, CHART_BASE_BOTTOM_PADDING + stripExtra, 2],
       cursor: { drag: { x: true, y: false } },
       legend: { show: false },
       scales: {
@@ -457,13 +527,24 @@ export function PingChart({
         ],
         destroy: [tooltipHooks.onDestroy],
         setCursor: [tooltipHooks.onSetCursor],
+        draw: [
+          (u) => {
+            if (!anomalyStrip) return;
+            drawAnomalyStrip(u, {
+              times: anomalyStrip.times,
+              rows: anomalyStrip.rows,
+              axisMax: anomalyStrip.axisMax,
+              trackColor: grid,
+            });
+          },
+        ],
       },
     };
-  }, [chart, chartMetric, connectNulls, selectedTaskIds, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [anomalyStrip, chart, chartMetric, connectNulls, selectedTaskIds, hours, isDark, requestedXRange, stripExtra, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
 
   const options = useMemo<uPlot.Options | null>(
-    () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
-    [baseOptions, w, h],
+    () => (baseOptions ? { ...baseOptions, width: w, height: h + stripExtra } : null),
+    [baseOptions, w, h, stripExtra],
   );
 
   const taskStats = useMemo(() => {
@@ -598,6 +679,14 @@ export function PingChart({
             title="对尖峰值做轻度平滑，仅影响图线显示"
           />
         )}
+        {chartMetric === "latency" && (
+          <SwitchToggle
+            label="自动量程"
+            active={autoRange}
+            onToggle={() => setAutoRange((value) => !value)}
+            title="按 p95 定量程（约占 80%），尖刺不撑大量程；超出量程的点从折线移到下方异常色带，颜色越深越慢。"
+          />
+        )}
         <SwitchToggle
           label="断点连线"
           active={connectNulls}
@@ -671,9 +760,9 @@ export function PingChart({
         {chart && options && visibleTasks.length > 0 ? (
           <>
             <UplotReact
-              key={`${uuid}-${hours}-${chartMetric}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
+              key={`${uuid}-${hours}-${chartMetric}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}-${autoRange ? "auto" : "fit"}`}
               options={options}
-              data={chart}
+              data={plotChart ?? chart}
             />
             <ChartTooltip tooltip={tooltip} />
           </>
@@ -681,6 +770,9 @@ export function PingChart({
           <div className="instance-empty">当前没有可显示的线路</div>
         )}
       </div>
+      {anomalyStrip && chart && options && visibleTasks.length > 0 && (
+        <PingAnomalyLegend axisMax={anomalyStrip.axisMax} stats={anomalyStrip.stats} />
+      )}
     </InstancePanel>
   );
 }

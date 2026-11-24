@@ -1,36 +1,111 @@
 name: release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号，如 0.2.20（可带 v；留空则自动 +1 patch）'
+        required: false
+        type: string
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
-      # hub 和主题收录站都要求 theme.json 的 version 与 tag 一致，不一致就别发布。
-      - name: Check version matches tag
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || github.ref }}
+
+      # 手动触发：版本号来自输入（留空按 patch 递增），自动同步 package.json / package-lock.json /
+      # theme.json 并提交回默认分支。推送 tag 触发：沿用旧流程，只校验版本一致，不改文件。
+      - name: Prepare release version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          THEME=$(node -p 'require("./theme.json").version')
-          PKG=$(node -p 'require("./package.json").version')
-          [ "$THEME" = "$PKG" ] || { echo "::error::theme.json $THEME, package.json $PKG"; exit 1; }
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            [ "$GITHUB_REF_NAME" = "v$THEME" ] || { echo "::error::tag $GITHUB_REF_NAME, theme.json v$THEME"; exit 1; }
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]; then
+              echo "::error::请从默认分支 $DEFAULT_BRANCH 运行，当前分支是 $GITHUB_REF_NAME"
+              exit 1
+            fi
+            current=$(node -p 'require("./package.json").version')
+            if [ -n "$INPUT_VERSION" ]; then
+              version=${INPUT_VERSION#v}
+            else
+              version=$(node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); console.log(a + "." + b + "." + (c + 1))' "$current")
+            fi
+            if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::版本号格式不对：$INPUT_VERSION（示例 0.2.20）"
+              exit 1
+            fi
+            if [ "$version" = "$current" ] || [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n1)" != "$version" ]; then
+              echo "::error::版本号 $version 必须大于当前版本 $current"
+              exit 1
+            fi
+            tag_status=0
+            git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null || tag_status=$?
+            if [ "$tag_status" -eq 0 ]; then
+              echo "::error::tag v$version 已存在，请换一个新版本号"
+              exit 1
+            elif [ "$tag_status" -ne 2 ]; then
+              echo "::error::检查远端 tag 失败"
+              exit 1
+            fi
+            if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::release v$version 已存在，请换一个新版本号"
+              exit 1
+            fi
+
+            npm version "$version" --no-git-tag-version --allow-same-version >/dev/null
+            VERSION="$version" node -e '
+              const fs = require("fs");
+              const file = "theme.json";
+              const theme = JSON.parse(fs.readFileSync(file, "utf8"));
+              theme.version = process.env.VERSION;
+              fs.writeFileSync(file, JSON.stringify(theme, null, 2) + "\n");
+            '
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package.json package-lock.json theme.json
+            git commit -m "chore: release $version"
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          else
+            version=${GITHUB_REF_NAME#v}
           fi
+          # hub 和主题收录站都要求 theme.json 的 version 与 tag 一致，不一致就别发布。
+          theme=$(node -p 'require("./theme.json").version')
+          pkg=$(node -p 'require("./package.json").version')
+          if [ "$theme" != "$version" ] || [ "$pkg" != "$version" ]; then
+            echo "::error::版本不一致：tag v$version，theme.json $theme，package.json $pkg"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
+
       - run: npm ci
       - run: npm run lint
       - run: npm test
       - run: npm run package
       - run: sha256sum theme.tar.gz | cut -d' ' -f1 | tee theme.tar.gz.sha256
+
       - uses: actions/upload-artifact@v7
         with:
           name: monitor-theme-luminaplus
@@ -38,14 +113,19 @@ jobs:
             theme.tar.gz
             theme.tar.gz.sha256
             preview.png
-      # 在网页上先建好 Release 再推 tag(或网页建 Release 时顺手建 tag)时，Release 已经存在：
-      # 这时只补传主题包，覆盖同名文件，不再因为「already exists」失败。
-      - if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Publish release
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" theme.tar.gz theme.tar.gz.sha256 --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$GITHUB_REF_NAME" theme.tar.gz theme.tar.gz.sha256 --generate-notes --repo "$GITHUB_REPOSITORY"
+          set -euo pipefail
+          tag="v$VERSION"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            git tag -a "$tag" -m "$tag"
+            git push origin "refs/tags/$tag"
           fi
-        env:
-          GH_TOKEN: ${{ github.token }}
+          # 在网页上先建好 Release 再推 tag(或网页建 Release 时顺手建 tag)时，Release 已经存在：
+          # 这时只补传主题包，覆盖同名文件，不再因为「already exists」失败。
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" theme.tar.gz theme.tar.gz.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" theme.tar.gz theme.tar.gz.sha256 --verify-tag --generate-notes --repo "$GITHUB_REPOSITORY"
+          fi

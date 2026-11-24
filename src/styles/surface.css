@@ -2398,6 +2398,53 @@ body::after {
   border-radius: 12px;
 }
 
+.instance-ping-anomaly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.instance-ping-anomaly-legend,
+.instance-ping-anomaly-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.instance-ping-anomaly i {
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.instance-ping-anomaly-tick {
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+}
+
+.instance-ping-anomaly-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.instance-ping-anomaly-empty {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+}
+
+.instance-ping-anomaly-note {
+  color: var(--text-tertiary);
+}
+
 .instance-ping-tasks {
   display: flex;
   flex-wrap: wrap;
