@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   isPingTaskVisible,
-  summarizePingRecords,
   togglePingTaskSelection,
 } from "@/components/instance/PingChart";
-import { resolvePingRecordLossPercent } from "@/utils/pingMetrics";
+import { resolvePingRecordLossPercent, summarizePingRecords } from "@/utils/pingMetrics";
 import type { PingRecord } from "@/types/models";
 
 function record(

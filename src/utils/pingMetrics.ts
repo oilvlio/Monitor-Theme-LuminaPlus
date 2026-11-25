@@ -26,6 +26,82 @@ function seriesKey(client: string, taskId: number) {
   return `${client}\u0000${taskId}`;
 }
 
+interface WeightedLatency {
+  value: number;
+  weight: number;
+}
+
+function valueAtWeightedIndex(sorted: WeightedLatency[], index: number) {
+  let offset = 0;
+  for (const sample of sorted) {
+    offset += sample.weight;
+    if (index < offset) return sample.value;
+  }
+  return sorted[sorted.length - 1]?.value ?? null;
+}
+
+function percentileFromWeighted(sorted: WeightedLatency[], ratio: number) {
+  const total = sorted.reduce((sum, sample) => sum + sample.weight, 0);
+  if (total <= 0) return null;
+  const index = (total - 1) * ratio;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const lowerValue = valueAtWeightedIndex(sorted, lower);
+  const upperValue = valueAtWeightedIndex(sorted, upper);
+  if (lowerValue == null || upperValue == null) return null;
+  if (lower === upper) return lowerValue;
+  const weight = index - lower;
+  return lowerValue + (upperValue - lowerValue) * weight;
+}
+
+/**
+ * 汇总一组 Ping 采样：延迟按样本数加权，丢包按样本数累计。
+ * 图表卡片和详情页共用，避免两处口径不一致。
+ */
+export function summarizePingRecords(records: PingRecord[]) {
+  const samples = records.map((record) => ({
+    record,
+    ...resolvePingSampleCounts(record),
+  }));
+  const valid = samples
+    .filter(({ record, valid: count }) => record.value >= 0 && count > 0)
+    .map(({ record, valid: count }) => ({ value: record.value, weight: count }))
+    .sort((a, b) => a.value - b.value);
+  const total = samples.reduce((sum, sample) => sum + sample.total, 0);
+  const lost = samples.reduce((sum, sample) => sum + sample.lost, 0);
+  const validCount = valid.reduce((sum, sample) => sum + sample.weight, 0);
+
+  let latest: number | null = null;
+  for (let index = samples.length - 1; index >= 0; index -= 1) {
+    const { record, valid: count } = samples[index];
+    if (record.value >= 0 && count > 0) {
+      latest = record.value;
+      break;
+    }
+  }
+
+  return {
+    latest,
+    avg:
+      validCount > 0
+        ? valid.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / validCount
+        : null,
+    min: valid[0]?.value ?? null,
+    max: valid[valid.length - 1]?.value ?? null,
+    p50: percentileFromWeighted(valid, 0.5),
+    p99: percentileFromWeighted(valid, 0.99),
+    total,
+    lost,
+    loss: total > 0 ? (lost / total) * 100 : 0,
+  };
+}
+
+/** p99 与 p50 的比值，用于和详情页卡片的「抖动」保持一致。 */
+export function pingVolatility(p50: number | null, p99: number | null) {
+  if (p50 == null || p99 == null) return null;
+  return Math.max(0, p99 - p50) / Math.min(50, Math.max(10, p50));
+}
+
 export function resolvePingSampleCounts(
   sample: Pick<PingRecord, "value" | "count" | "loss">,
 ) {

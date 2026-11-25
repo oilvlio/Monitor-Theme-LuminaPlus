@@ -16,7 +16,12 @@ import {
   downsampleAligned,
   insertMetricGapSentinels,
 } from "../instance/chartData";
-import { resolvePingChartInterval } from "@/utils/pingMetrics";
+import {
+  pingVolatility,
+  resolvePingChartInterval,
+  summarizePingRecords,
+} from "@/utils/pingMetrics";
+import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { PingRecord } from "@/types/models";
@@ -28,24 +33,6 @@ export interface TaskPingNode {
 }
 
 const MAX_RENDER_POINTS = 720;
-
-// 服务端只下发有丢包的任务窗口丢包率，缺席即 0%，与 normalizePingHistory 一致。
-function windowLossValue(loss: number | undefined) {
-  return typeof loss === "number" && Number.isFinite(loss) ? loss : 0;
-}
-
-function formatWindowLoss(loss: number | undefined) {
-  return `${windowLossValue(loss).toFixed(1)}%`;
-}
-
-// 丢包分档只用于着色：0 无色，<1% 轻微，<5% 注意，其余告警。
-function lossLevel(loss: number | undefined) {
-  const value = windowLossValue(loss);
-  if (value <= 0) return "none";
-  if (value < 1) return "low";
-  if (value < 5) return "mid";
-  return "high";
-}
 
 export function HomeTaskPingChart({
   taskId,
@@ -157,14 +144,46 @@ export function HomeTaskPingChart({
   );
   const visibleUuids = useMemo(() => new Set(visibleNodes.map((node) => node.uuid)), [visibleNodes]);
 
-  const latestByNode = useMemo(() => {
-    const latest = new Map<string, number | null>();
+  // 节点卡和详情页 Ping 卡片保持同一套统计口径：延迟按样本数加权，丢包用服务端窗口值。
+  const nodeStats = useMemo(() => {
+    const grouped = new Map<string, PingRecord[]>();
     for (const { record } of sortedRecords) {
       if (!nodeKeySet.has(record.client)) continue;
-      latest.set(record.client, record.value >= 0 ? record.value : null);
+      const bucket = grouped.get(record.client);
+      if (bucket) bucket.push(record);
+      else grouped.set(record.client, [record]);
     }
-    return latest;
-  }, [nodeKeySet, sortedRecords]);
+    const result = new Map<string, {
+      latest: number | null;
+      avg: number | null;
+      min: number | null;
+      max: number | null;
+      p99: number | null;
+      volatility: number | null;
+      total: number;
+      loss: number;
+      interval: number;
+    }>();
+    for (const uuid of nodeKeys) {
+      const summary = summarizePingRecords(grouped.get(uuid) ?? []);
+      const windowLoss = lossByNode[uuid];
+      result.set(uuid, {
+        latest: summary.latest,
+        avg: summary.avg,
+        min: summary.min,
+        max: summary.max,
+        p99: summary.p99,
+        volatility: pingVolatility(summary.p50, summary.p99),
+        total: summary.total,
+        loss:
+          typeof windowLoss === "number" && Number.isFinite(windowLoss)
+            ? windowLoss
+            : summary.loss,
+        interval: taskInterval ?? 60,
+      });
+    }
+    return result;
+  }, [lossByNode, nodeKeys, nodeKeySet, sortedRecords, taskInterval]);
 
   const yRange = useMemo<[number | null, number | null]>(() => {
     if (!chart) return [null, null];
@@ -324,8 +343,10 @@ export function HomeTaskPingChart({
       <div className="home-task-ping-nodes" data-filtered={hiddenNodes.size > 0 ? "true" : "false"}>
         {nodes.map((node, index) => {
           const selected = !hiddenNodes.has(node.uuid);
-          const latest = latestByNode.get(node.uuid);
-          const loss = lossByNode[node.uuid];
+          const stats = nodeStats.get(node.uuid);
+          const latest = stats?.latest ?? null;
+          const loss = stats?.loss ?? 0;
+          const interval = stats?.interval ?? taskInterval ?? 60;
           const color = nodeColors.get(node.uuid) ?? colorForSeries(index, nodes.length);
           const name = nameByUuid.get(node.uuid) ?? node.uuid;
           return (
@@ -334,28 +355,37 @@ export function HomeTaskPingChart({
               type="button"
               className="home-task-node"
               data-selected={selected ? "true" : "false"}
-              data-loss={lossLevel(loss)}
               aria-pressed={selected}
               onClick={() => toggleNode(node.uuid)}
               style={{ "--node-color": color } as CSSProperties}
-              title={`${name}\n当前 ${latest != null ? `${latest.toFixed(1)} ms` : "超时"} | 窗口丢包 ${formatWindowLoss(loss)}\n点击${selected ? "隐藏" : "显示"}曲线`}
+              title={[
+                name,
+                `当前 ${latest != null ? `${latest.toFixed(1)} ms` : "—"} | 均值 ${stats?.avg != null ? `${stats.avg.toFixed(1)} ms` : "—"} | 丢包 ${loss.toFixed(1)}%`,
+                `p99 ${stats?.p99 != null ? `${stats.p99.toFixed(0)} ms` : "—"} | 抖动 ${stats?.volatility != null ? stats.volatility.toFixed(2) : "—"}`,
+                `min ${stats?.min != null ? `${stats.min.toFixed(0)} ms` : "—"} | max ${stats?.max != null ? `${stats.max.toFixed(0)} ms` : "—"} | 样本 ${stats?.total ?? 0} | 间隔 ${interval}s`,
+                `点击${selected ? "隐藏" : "显示"}曲线`,
+              ].join("\n")}
             >
-              <span className="home-task-node-name">{name}</span>
-              <span className="home-task-node-latency" data-timeout={latest == null ? "true" : "false"}>
-                {latest != null ? (
-                  <>
-                    {latest.toFixed(1)}
-                    <small>ms</small>
-                  </>
-                ) : (
-                  "超时"
-                )}
-              </span>
-              <span className="home-task-node-loss">
-                <span className="home-task-node-loss-bar" aria-hidden>
-                  <i style={{ width: `${Math.min(100, Math.max(windowLossValue(loss) > 0 ? 4 : 0, windowLossValue(loss)))}%` }} />
+              <span className="home-task-node-head">
+                <span className="home-task-node-name" style={{ color }}>{name}</span>
+                <span
+                  className="home-task-node-primary"
+                  style={{ color: latest != null ? latencyHeatColor(latest) : "var(--text-tertiary)" }}
+                >
+                  {latest != null ? `${latest.toFixed(1)} ms` : "—"}
                 </span>
-                <span>丢包 {formatWindowLoss(loss)}</span>
+              </span>
+              <span className="home-task-node-stats">
+                <span>均值 {stats?.avg != null ? `${stats.avg.toFixed(1)} ms` : "—"}</span>
+                <span style={{ color: lossHeatColor(loss) }}>丢包 {loss.toFixed(1)}%</span>
+                <span>p99 {stats?.p99 != null ? `${stats.p99.toFixed(0)} ms` : "—"}</span>
+                <span>抖动 {stats?.volatility != null ? stats.volatility.toFixed(2) : "—"}</span>
+              </span>
+              <span className="home-task-node-meta">
+                <span>min {stats?.min != null ? `${stats.min.toFixed(0)} ms` : "—"}</span>
+                <span>max {stats?.max != null ? `${stats.max.toFixed(0)} ms` : "—"}</span>
+                <span>样本 {stats?.total ?? 0}</span>
+                <span>{interval}s</span>
               </span>
             </button>
           );

@@ -1075,9 +1075,7 @@
 
 /* 首页按监控任务聚合的多节点延迟对比：默认折叠，点开后才请求历史数据。 */
 .home-task-ping {
-  --tp-ok: #16a34a;
   --tp-warn: #d97706;
-  --tp-bad: #dc2626;
   margin-top: 18px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 46%, transparent);
   border-radius: 16px;
@@ -1300,49 +1298,37 @@
   opacity: 0.72;
 }
 
-/* 节点卡：左侧色条与曲线同色，既是图例也是显隐开关；延迟数字是卡片的重点。 */
+/* 节点卡：与详情页 Ping 图表的小卡片同款，图例、显隐开关和统计信息合在一张卡里。 */
 .home-task-ping-nodes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(224px, 1fr));
   gap: 8px;
 }
 
 .home-task-node {
-  position: relative;
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
-  padding: 10px 12px 10px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--node-color);
+  border-radius: 14px;
   background: var(--surface-elev-a);
   color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
   text-align: start;
   overflow: hidden;
   transition: opacity 160ms ease, background 160ms ease, border-color 160ms ease;
 }
 
-.home-task-node::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 4px;
-  background: var(--node-color);
-  transition: opacity 160ms ease;
-}
-
 .home-task-node:hover {
   background: var(--hover-bg);
-  border-color: color-mix(in srgb, var(--node-color) 45%, var(--border));
 }
 
 .home-task-node[data-selected="false"] {
-  opacity: 0.5;
-}
-
-.home-task-node[data-selected="false"]::before {
-  opacity: 0.25;
+  border-color: var(--border-subtle);
+  opacity: 0.45;
 }
 
 .home-task-node[data-selected="false"] .home-task-node-name {
@@ -1350,78 +1336,45 @@
   text-decoration-color: var(--text-tertiary);
 }
 
+.home-task-node-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .home-task-node-name {
+  min-width: 0;
   overflow: hidden;
-  color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.home-task-node-latency {
-  font-size: 20px;
+.home-task-node-primary {
+  flex: 0 0 auto;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
-.home-task-node-latency small {
-  margin-inline-start: 3px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-.home-task-node-latency[data-timeout="true"] {
-  color: var(--tp-bad);
-  font-size: 16px;
-}
-
-.home-task-node-loss {
+.home-task-node-stats,
+.home-task-node-meta {
   display: grid;
-  gap: 5px;
-  color: var(--text-tertiary);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  color: var(--text-secondary);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 550;
   font-variant-numeric: tabular-nums;
 }
 
-.home-task-node-loss-bar {
-  display: block;
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-tertiary) 18%, transparent);
-  overflow: hidden;
-}
-
-.home-task-node-loss-bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--tp-ok);
-}
-
-.home-task-node[data-loss="low"] .home-task-node-loss-bar i {
-  background: var(--tp-ok);
-}
-
-.home-task-node[data-loss="mid"] .home-task-node-loss {
-  color: var(--tp-warn);
-}
-
-.home-task-node[data-loss="mid"] .home-task-node-loss-bar i {
-  background: var(--tp-warn);
-}
-
-.home-task-node[data-loss="high"] .home-task-node-loss {
-  color: var(--tp-bad);
-}
-
-.home-task-node[data-loss="high"] .home-task-node-loss-bar i {
-  background: var(--tp-bad);
+.home-task-node-meta {
+  color: var(--text-tertiary);
+  font-size: 10px;
 }
 
 /* 图表放进内嵌面板，和上方卡片在层次上分开。 */
@@ -1475,7 +1428,7 @@
 /* 加载骨架：占位形状与最终布局一致，数据到达时不跳动。 */
 .home-task-ping-loading {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(224px, 1fr));
   gap: 8px;
 }
 
@@ -1500,7 +1453,7 @@
 }
 
 .home-task-ping-skeleton.is-node {
-  height: 82px;
+  height: 128px;
 }
 
 .home-task-ping-skeleton.is-plot {
@@ -1538,7 +1491,7 @@
 
   .home-task-ping-nodes,
   .home-task-ping-loading {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   }
 
   .home-task-ping-coverage {
@@ -1555,7 +1508,6 @@
 
   .home-task-ping-chevron,
   .home-task-node,
-  .home-task-node::before,
   .home-task-ping-chart-block {
     transition: none;
   }

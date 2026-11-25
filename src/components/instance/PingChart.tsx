@@ -39,77 +39,12 @@ import {
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
 import {
+  pingVolatility,
   resolvePingChartInterval,
-  resolvePingSampleCounts,
+  summarizePingRecords,
 } from "@/utils/pingMetrics";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { PingRecord, PingTaskStats } from "@/types/models";
-
-interface WeightedLatency {
-  value: number;
-  weight: number;
-}
-
-function valueAtWeightedIndex(sorted: WeightedLatency[], index: number) {
-  let offset = 0;
-  for (const sample of sorted) {
-    offset += sample.weight;
-    if (index < offset) return sample.value;
-  }
-  return sorted[sorted.length - 1]?.value ?? null;
-}
-
-function percentileFromWeighted(sorted: WeightedLatency[], ratio: number) {
-  const total = sorted.reduce((sum, sample) => sum + sample.weight, 0);
-  if (total <= 0) return null;
-  const index = (total - 1) * ratio;
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const lowerValue = valueAtWeightedIndex(sorted, lower);
-  const upperValue = valueAtWeightedIndex(sorted, upper);
-  if (lowerValue == null || upperValue == null) return null;
-  if (lower === upper) return lowerValue;
-  const weight = index - lower;
-  return lowerValue + (upperValue - lowerValue) * weight;
-}
-
-export function summarizePingRecords(records: PingRecord[]) {
-  const samples = records.map((record) => ({
-    record,
-    ...resolvePingSampleCounts(record),
-  }));
-  const valid = samples
-    .filter(({ record, valid: count }) => record.value >= 0 && count > 0)
-    .map(({ record, valid: count }) => ({ value: record.value, weight: count }))
-    .sort((a, b) => a.value - b.value);
-  const total = samples.reduce((sum, sample) => sum + sample.total, 0);
-  const lost = samples.reduce((sum, sample) => sum + sample.lost, 0);
-  const validCount = valid.reduce((sum, sample) => sum + sample.weight, 0);
-
-  let latest: number | null = null;
-  for (let index = samples.length - 1; index >= 0; index -= 1) {
-    const { record, valid: count } = samples[index];
-    if (record.value >= 0 && count > 0) {
-      latest = record.value;
-      break;
-    }
-  }
-
-  return {
-    latest,
-    avg:
-      validCount > 0
-        ? valid.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / validCount
-        : null,
-    min: valid[0]?.value ?? null,
-    max: valid[valid.length - 1]?.value ?? null,
-    p50: percentileFromWeighted(valid, 0.5),
-    p99: percentileFromWeighted(valid, 0.99),
-    total,
-    lost,
-    loss: total > 0 ? (lost / total) * 100 : 0,
-  };
-}
 
 export function togglePingTaskSelection(selected: ReadonlySet<number>, taskId: number) {
   const next = new Set(selected);
@@ -576,10 +511,7 @@ export function PingChart({
       const max = server ? server.max : fallback?.max ?? null;
       const p50 = server ? server.p50 : fallback?.p50 ?? null;
       const p99 = server ? server.p99 : fallback?.p99 ?? null;
-      const fallbackVolatility =
-        p50 != null && p99 != null
-          ? Math.max(0, p99 - p50) / Math.min(50, Math.max(10, p50))
-          : null;
+      const fallbackVolatility = pingVolatility(p50, p99);
       const volatility =
         server && Number.isFinite(server.p99P50Ratio)
           ? server.p99P50Ratio
