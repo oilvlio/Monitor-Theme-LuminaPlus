@@ -54,7 +54,7 @@ interface MonitorMetrics {
   procs?: number;
 }
 
-interface MonitorNode {
+export interface MonitorNode {
   id: number;
   name?: string;
   group?: string;
@@ -194,6 +194,18 @@ let cachedNodes: MonitorNode[] = [];
 let cachedAt = 0;
 let socket: WebSocket | null = null;
 let reconnectTimer: number | null = null;
+let liveSnapshotAt = 0;
+let snapshotRevision = 0;
+const liveSnapshotListeners = new Set<(nodes: MonitorNode[]) => void>();
+
+export function subscribeLiveSnapshots(listener: (nodes: MonitorNode[]) => void): () => void {
+  liveSnapshotListeners.add(listener);
+  return () => { liveSnapshotListeners.delete(listener); };
+}
+
+export function hasFreshLiveSnapshot(): boolean {
+  return socket?.readyState === WebSocket.OPEN && liveSnapshotAt > 0 && Date.now() - liveSnapshotAt < 7_000;
+}
 
 function acceptSnapshot(payload: unknown) {
   if (!payload || typeof payload !== "object") return false;
@@ -204,6 +216,7 @@ function acceptSnapshot(payload: unknown) {
       Boolean(node) && typeof node === "object" && Number.isInteger((node as MonitorNode).id),
   );
   cachedAt = Date.now();
+  snapshotRevision += 1;
   return true;
 }
 
@@ -223,9 +236,12 @@ function ensureLiveSocket() {
       socket = next;
       next.onmessage = (event) => {
         try {
-          acceptSnapshot(JSON.parse(String(event.data)));
+          if (acceptSnapshot(JSON.parse(String(event.data)))) {
+            liveSnapshotAt = Date.now();
+            for (const listener of liveSnapshotListeners) listener(cachedNodes);
+          }
         } catch {
-          // A broken frame is ignored; the next two-second snapshot can recover.
+          // A broken frame is ignored; the next valid snapshot or HTTP fallback recovers.
         }
       };
       next.onerror = () => next.close();
@@ -242,11 +258,13 @@ function ensureLiveSocket() {
 
 async function loadMonitorNodes(options?: ApiCallOptions, allowFreshCache = true) {
   ensureLiveSocket();
-  if (allowFreshCache && cachedNodes.length > 0 && Date.now() - cachedAt < 7_000) {
+  if (allowFreshCache && cachedAt > 0 && Date.now() - cachedAt < 7_000) {
     return cachedNodes;
   }
+  const revision = snapshotRevision;
   const payload = await requestJson<{ nodes?: MonitorNode[] }>("/api/nodes", options);
-  acceptSnapshot(payload);
+  // An HTTP fallback started before a WS frame must not replace the newer snapshot.
+  if (revision === snapshotRevision) acceptSnapshot(payload);
   return cachedNodes;
 }
 

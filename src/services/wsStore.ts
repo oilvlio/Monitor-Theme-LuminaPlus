@@ -1,5 +1,6 @@
 import type { NodeInfo, NodeMetrics, NodeRealtime, TrafficTrendSample } from "@/types/models";
-import { getNodes, getNodesLatestStatus } from "@/services/api";
+import { getNodes, getNodesLatestStatus, hasFreshLiveSnapshot, monitorNodeToInfo, monitorNodeToRealtime, subscribeLiveSnapshots } from "@/services/api";
+import type { MonitorNode } from "@/services/api";
 
 type Listener = () => void;
 type RealtimePayload = Record<string, unknown>;
@@ -452,7 +453,7 @@ function markScrollActivity() {
     scrollActive = false;
     if (refreshDeferredWhileScrolling) {
       refreshDeferredWhileScrolling = false;
-      void refreshLatestStatus();
+      requestSnapshotRefresh();
     }
   }, SCROLL_IDLE_DELAY_MS);
 }
@@ -694,76 +695,7 @@ async function performNodeInfoSync() {
   try {
     const nodes = sortNodes(await getNodes({ signal: controller.signal }));
     if (controller.signal.aborted) return;
-    const order = nodes.map((node) => node.uuid);
-    const touchedMeta = new Set<string>();
-    const touchedMetrics = new Set<string>();
-    const previousUuids = new Set(state.order);
-    const nextUuids = new Set(order);
-    const orderChanged =
-      order.length !== state.order.length ||
-      order.some((uuid, index) => uuid !== state.order[index]);
-    const metaByUuid: Record<string, NodeInfo> = {};
-    const metricsByUuid: Record<string, NodeMetrics> = {};
-
-    for (const info of nodes) {
-      const prev = state.metaByUuid[info.uuid];
-      const isUnchanged = prev != null && shallowEqualNodeInfo(prev, info);
-      const merged = isUnchanged ? prev : { ...info };
-      metaByUuid[info.uuid] = merged;
-      const previousMetrics = state.metricsByUuid[info.uuid];
-      const nextMetrics = previousMetrics
-        ? alignEmptyMetricsTotals(previousMetrics, info)
-        : emptyMetrics(info, null);
-      metricsByUuid[info.uuid] = nextMetrics;
-      if (!isUnchanged) {
-        touchedMeta.add(info.uuid);
-      }
-      if (!previousMetrics || previousMetrics !== nextMetrics) {
-        touchedMetrics.add(info.uuid);
-      }
-    }
-
-    for (const uuid of previousUuids) {
-      if (!nextUuids.has(uuid)) {
-        touchedMeta.add(uuid);
-        touchedMetrics.add(uuid);
-      }
-    }
-
-    const trafficTrends = Object.fromEntries(
-      order.map((uuid) => [uuid, state.trafficTrends[uuid] ?? EMPTY_TRAFFIC_TREND]),
-    );
-
-    const nodeListChanged =
-      orderChanged ||
-      [...touchedMeta].some((uuid) => {
-        const prev = state.metaByUuid[uuid];
-        const next = metaByUuid[uuid];
-        return Boolean(prev?.hidden) !== Boolean(next?.hidden);
-      });
-
-    const storeStatusChanged = !hydrated || nodeInfoError;
-    hydrated = true;
-    nodeInfoError = false;
-    if (orderChanged || touchedMeta.size > 0 || touchedMetrics.size > 0 || storeStatusChanged) {
-      commit(
-        {
-          ...state,
-          order,
-          metaByUuid,
-          metricsByUuid,
-          trafficTrends,
-        },
-        {
-          meta: touchedMeta,
-          metrics: touchedMetrics,
-          // traffic trend 只由 refreshLatestStatus 改动;syncNodeInfo 原样带过来,这里无需通知。
-          nodeList: nodeListChanged,
-          allNodes: orderChanged || touchedMeta.size > 0,
-          storeStatus: storeStatusChanged,
-        },
-      );
-    }
+    applyNodeInfo(nodes);
   } catch (error) {
     if (!controller.signal.aborted && !nodeInfoError) {
       nodeInfoError = true;
@@ -772,6 +704,79 @@ async function performNodeInfoSync() {
     throw error;
   } finally {
     if (nodeInfoController === controller) nodeInfoController = null;
+  }
+}
+
+function applyNodeInfo(nodes: NodeInfo[]) {
+  const order = nodes.map((node) => node.uuid);
+  const touchedMeta = new Set<string>();
+  const touchedMetrics = new Set<string>();
+  const previousUuids = new Set(state.order);
+  const nextUuids = new Set(order);
+  const orderChanged =
+    order.length !== state.order.length ||
+    order.some((uuid, index) => uuid !== state.order[index]);
+  const metaByUuid: Record<string, NodeInfo> = {};
+  const metricsByUuid: Record<string, NodeMetrics> = {};
+
+  for (const info of nodes) {
+    const prev = state.metaByUuid[info.uuid];
+    const isUnchanged = prev != null && shallowEqualNodeInfo(prev, info);
+    const merged = isUnchanged ? prev : { ...info };
+    metaByUuid[info.uuid] = merged;
+    const previousMetrics = state.metricsByUuid[info.uuid];
+    const nextMetrics = previousMetrics
+      ? alignEmptyMetricsTotals(previousMetrics, info)
+      : emptyMetrics(info, null);
+    metricsByUuid[info.uuid] = nextMetrics;
+    if (!isUnchanged) {
+      touchedMeta.add(info.uuid);
+    }
+    if (!previousMetrics || previousMetrics !== nextMetrics) {
+      touchedMetrics.add(info.uuid);
+    }
+  }
+
+  for (const uuid of previousUuids) {
+    if (!nextUuids.has(uuid)) {
+      touchedMeta.add(uuid);
+      touchedMetrics.add(uuid);
+    }
+  }
+
+  const trafficTrends = Object.fromEntries(
+    order.map((uuid) => [uuid, state.trafficTrends[uuid] ?? EMPTY_TRAFFIC_TREND]),
+  );
+
+  const nodeListChanged =
+    orderChanged ||
+    [...touchedMeta].some((uuid) => {
+      const prev = state.metaByUuid[uuid];
+      const next = metaByUuid[uuid];
+      return Boolean(prev?.hidden) !== Boolean(next?.hidden);
+    });
+
+  const storeStatusChanged = !hydrated || nodeInfoError;
+  hydrated = true;
+  nodeInfoError = false;
+  if (orderChanged || touchedMeta.size > 0 || touchedMetrics.size > 0 || storeStatusChanged) {
+    commit(
+      {
+        ...state,
+        order,
+        metaByUuid,
+        metricsByUuid,
+        trafficTrends,
+      },
+      {
+        meta: touchedMeta,
+        metrics: touchedMetrics,
+        // Traffic trends are updated separately with realtime metrics.
+        nodeList: nodeListChanged,
+        allNodes: orderChanged || touchedMeta.size > 0,
+        storeStatus: storeStatusChanged,
+      },
+    );
   }
 }
 
@@ -791,27 +796,7 @@ async function refreshLatestStatus() {
       signal: controller.signal,
     });
     if (controller.signal.aborted) return;
-    const applied = applyLatestStatus(records);
-    const metricsChanged = applied.touchedMetrics.length > 0;
-    const trafficTrendsChanged = applied.touchedTrafficTrends.length > 0;
-    const storeStatusChanged = state.failureStreak > 0;
-
-    if (metricsChanged || trafficTrendsChanged || storeStatusChanged) {
-      commit(
-        {
-          ...state,
-          metricsByUuid: metricsChanged ? applied.nextMetricsByUuid : state.metricsByUuid,
-          trafficTrends:
-            trafficTrendsChanged ? applied.nextTrafficTrends : state.trafficTrends,
-          failureStreak: 0,
-        },
-        {
-          metrics: applied.touchedMetrics,
-          trafficTrends: applied.touchedTrafficTrends,
-          storeStatus: storeStatusChanged,
-        },
-      );
-    }
+    commitLatestStatus(records);
   } catch {
     if (controller.signal.aborted) return;
     commit(
@@ -824,6 +809,30 @@ async function refreshLatestStatus() {
   } finally {
     if (liveStatusController === controller) liveStatusController = null;
     refreshInFlight = false;
+  }
+}
+
+function commitLatestStatus(records: Record<string, unknown>) {
+  const applied = applyLatestStatus(records);
+  const metricsChanged = applied.touchedMetrics.length > 0;
+  const trafficTrendsChanged = applied.touchedTrafficTrends.length > 0;
+  const storeStatusChanged = state.failureStreak > 0;
+
+  if (metricsChanged || trafficTrendsChanged || storeStatusChanged) {
+    commit(
+      {
+        ...state,
+        metricsByUuid: metricsChanged ? applied.nextMetricsByUuid : state.metricsByUuid,
+        trafficTrends:
+          trafficTrendsChanged ? applied.nextTrafficTrends : state.trafficTrends,
+        failureStreak: 0,
+      },
+      {
+        metrics: applied.touchedMetrics,
+        trafficTrends: applied.touchedTrafficTrends,
+        storeStatus: storeStatusChanged,
+      },
+    );
   }
 }
 
@@ -852,15 +861,41 @@ let retainCount = 0;
 let stopTimer: number | null = null;
 let liveStatusTimer: number | null = null;
 let nodeInfoTimer: number | null = null;
+let unsubscribeLiveSnapshots: (() => void) | null = null;
+let pendingLiveSnapshot: MonitorNode[] | null = null;
+
+function requestSnapshotRefresh() {
+  if (!started) return;
+  if (scrollActive) {
+    refreshDeferredWhileScrolling = true;
+    return;
+  }
+  const nodes = pendingLiveSnapshot;
+  pendingLiveSnapshot = null;
+  if (!nodes) {
+    void refreshLatestStatus();
+    return;
+  }
+  // A slow HTTP bootstrap/fallback must not hold up a newer WS snapshot.
+  nodeInfoController?.abort();
+  liveStatusController?.abort();
+  applyNodeInfo(sortNodes(nodes.map(monitorNodeToInfo)));
+  commitLatestStatus(Object.fromEntries(nodes.map(node => [String(node.id), monitorNodeToRealtime(node)])));
+}
 
 function ensureStarted() {
   if (started) return;
   started = true;
+  unsubscribeLiveSnapshots = subscribeLiveSnapshots(nodes => {
+    pendingLiveSnapshot = nodes;
+    requestSnapshotRefresh();
+  });
 
   ensureScrollTrackingStarted();
   void bootstrap();
-  // 实时指标与节点信息使用独立轮询节奏。
+  // WS snapshots drive live updates; this timer only recovers a stale/broken stream.
   liveStatusTimer = window.setInterval(() => {
+    if (hasFreshLiveSnapshot()) return;
     if (!hydrated) {
       if (bootstrapSkipTicks > 0) {
         bootstrapSkipTicks -= 1;
@@ -898,6 +933,9 @@ export function retainStore() {
 }
 
 function stopStore() {
+  unsubscribeLiveSnapshots?.();
+  unsubscribeLiveSnapshots = null;
+  pendingLiveSnapshot = null;
   if (stopTimer != null) {
     window.clearTimeout(stopTimer);
     stopTimer = null;
