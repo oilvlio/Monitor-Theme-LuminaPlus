@@ -27,7 +27,7 @@ interface LoadRecordsOptions extends ApiCallOptions {
   skipMetricQuery?: boolean;
 }
 
-interface MonitorMe {
+export interface MonitorMeResponse {
   authed?: boolean;
   github?: boolean;
   history_days?: number;
@@ -500,13 +500,22 @@ function taskFromProbe(id: number, name: string, clients: string[]): PingTask {
   };
 }
 
-export async function getMe(options?: ApiCallOptions): Promise<Me> {
-  const me = await requestJson<MonitorMe>("/api/me", options);
+export async function getMonitorMe(options?: ApiCallOptions): Promise<MonitorMeResponse> {
+  return requestJson<MonitorMeResponse>("/api/me", options);
+}
+
+export function monitorMeToAuth(me: MonitorMeResponse): Me {
   return { logged_in: me.authed === true, username: "", uuid: "" };
 }
 
-export async function getPublic(options?: ApiCallOptions): Promise<PublicConfig> {
-  const me = await requestJson<MonitorMe>("/api/me", options);
+export async function getMe(options?: ApiCallOptions): Promise<Me> {
+  return monitorMeToAuth(await getMonitorMe(options));
+}
+
+export async function getPublicFromMe(
+  me: MonitorMeResponse,
+  options?: ApiCallOptions,
+): Promise<PublicConfig> {
   // monitor 在私有站点会拒绝匿名读取主题配置。先返回站点的私有状态，
   // 让访客看到登录入口；登录后仍需正常读取服务端配置。
   const privateVisitor = me.public_page === false && me.authed !== true;
@@ -538,6 +547,10 @@ export async function getPublic(options?: ApiCallOptions): Promise<PublicConfig>
     theme_settings: themeSettings,
     theme_settings_error: themeSettingsError,
   };
+}
+
+export async function getPublic(options?: ApiCallOptions): Promise<PublicConfig> {
+  return getPublicFromMe(await getMonitorMe(options), options);
 }
 
 export async function getNodes(options?: ApiCallOptions): Promise<NodeInfo[]> {
