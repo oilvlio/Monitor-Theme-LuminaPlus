@@ -198,7 +198,7 @@ export function useNodeCardModel(
       subtitle: joinDisplayParts(subtitleParts),
       expire: formatExpireDays(meta.expired_at, now),
       expireColor: getExpireTextColor(meta.expired_at, now),
-      trafficReset: getTrafficResetDisplay(meta.expired_at, now),
+      trafficReset: getTrafficResetDisplay(meta.expired_at, now, meta.traffic_reset_day),
       renewalPrice: formatRenewalPrice(meta),
       osName: resolveOsInfo(meta.os).name,
       loadBaseline: meta.cpu_cores > 0 ? meta.cpu_cores : 4,

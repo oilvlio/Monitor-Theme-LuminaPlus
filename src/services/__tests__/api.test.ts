@@ -25,6 +25,7 @@ const node = {
   expires_at: "2027-01-01T00:00:00Z",
   traffic_limit: 10_000,
   traffic_mode: "sum",
+  traffic_reset_day: 22,
   month_rx: 400,
   month_tx: 600,
   ipv4: "203.0.113.7",
@@ -59,6 +60,7 @@ describe("monitor node adapter", () => {
       region: "JP",
       virtualization: "KVM",
       traffic_limit_type: "sum",
+      traffic_reset_day: 22,
       ipv4: "203.0.113.7",
     });
   });

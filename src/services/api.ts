@@ -79,6 +79,7 @@ export interface MonitorNode {
   expires_at?: string | null;
   traffic_limit?: number;
   traffic_mode?: string;
+  traffic_reset_day?: number;
   total_rx?: number;
   total_tx?: number;
   month_rx?: number;
@@ -319,6 +320,7 @@ export function monitorNodeToInfo(node: MonitorNode): NodeInfo {
     public_remark: string(node.public_remark),
     traffic_limit: number(node.traffic_limit),
     traffic_limit_type: string(node.traffic_mode) || "sum",
+    traffic_reset_day: number(node.traffic_reset_day),
     ipv4: string(node.ipv4),
     ipv6: string(node.ipv6),
     created_at: "",

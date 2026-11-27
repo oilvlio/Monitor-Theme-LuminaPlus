@@ -9,12 +9,17 @@ export interface TrafficResetDisplay {
 export function getTrafficResetDisplay(
   expiredAt: string | number | null | undefined,
   now: number,
+  configuredResetDay?: number | null,
 ): TrafficResetDisplay | null {
-  const timestamp = resolveExpireTimestamp(expiredAt);
-  if (timestamp == null || !Number.isFinite(now)) return null;
-  if ((timestamp - now) / 86_400_000 > LONG_TERM_EXPIRE_DAYS) return null;
+  if (!Number.isFinite(now)) return null;
 
-  const day = new Date(timestamp).getDate();
+  const validResetDay = Number.isInteger(configuredResetDay) && configuredResetDay! >= 1 && configuredResetDay! <= 31;
+  const timestamp = validResetDay ? null : resolveExpireTimestamp(expiredAt);
+  if (!validResetDay && (timestamp == null || (timestamp - now) / 86_400_000 > LONG_TERM_EXPIRE_DAYS)) {
+    return null;
+  }
+
+  const day = validResetDay ? configuredResetDay! : new Date(timestamp!).getDate();
   const today = new Date(now);
   const year = today.getFullYear();
   const month = today.getMonth();
@@ -27,8 +32,9 @@ export function getTrafficResetDisplay(
   const ordinal = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
   const days = (ordinal(next) - ordinal(today)) / 86_400_000;
   const dateLabel = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+  const resetSource = validResetDay ? "按设置的流量重置日" : "默认按到期日";
   return {
     label: days === 0 ? "今日重置" : `${days}天后重置`,
-    title: `流量重置日：${dateLabel} · 默认按到期日，每月${day}日重置（不足该日取月末）`,
+    title: `流量重置日：${dateLabel} · ${resetSource}，每月${day}日重置（不足该日取月末）`,
   };
 }
